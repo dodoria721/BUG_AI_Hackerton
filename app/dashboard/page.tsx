@@ -17,16 +17,26 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
+
     async function load() {
       const [shipsRes, congestionRes] = await Promise.all([
         fetch("/api/ships"),
         fetch("/api/congestion"),
       ]);
+      if (!active) return;
       setShips(await shipsRes.json());
       setCongestion(await congestionRes.json());
       setLoading(false);
     }
+
     load();
+    // 30초마다 폴링해 최신 선박·혼잡도를 반영한다(목업이라 값은 고정이어도 갱신 구조는 동일).
+    const timer = setInterval(load, 30_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
   return (
@@ -43,7 +53,12 @@ export default function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <section className="h-[480px] overflow-hidden rounded-xl border border-white/10 lg:col-span-2">
-            <ShipMap ships={ships} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} />
+            <ShipMap
+              ships={ships}
+              selectedMmsi={selectedMmsi}
+              onSelect={setSelectedMmsi}
+              currentLevel={congestion?.currentLevel ?? 0}
+            />
           </section>
 
           <section className="rounded-xl border border-white/10 bg-[var(--color-surface)] p-4">

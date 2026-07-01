@@ -31,3 +31,9 @@ body {
   height: 100%;
   background-color: var(--surface);
 }
+
+/* cog 회전 삼각형 아이콘 — divIcon 기본 흰 배경/테두리 제거 */
+.ship-marker {
+  background: transparent;
+  border: none;
+}
