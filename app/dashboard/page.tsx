@@ -9,6 +9,7 @@ import { BUSAN_PORT } from "@/backend/ports/seed-port";
 import ShipList from "@/frontend/components/ShipList";
 import CongestionChart from "@/frontend/components/CongestionChart";
 import CongestionGauge from "@/frontend/components/CongestionGauge";
+import WeatherCard from "@/frontend/components/WeatherCard";
 import AdvisorPanel from "@/frontend/components/AdvisorPanel";
 
 // Leaflet은 window에 의존하므로 서버에서 렌더링하면 안 된다.
@@ -284,6 +285,9 @@ export default function DashboardPage() {
 
             {/* 메인 — 세로 단일 컬럼 */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* 기상 현황 */}
+              <WeatherCard />
+
               {/* 지도 */}
               <section style={{ ...card, overflow: "hidden" }}>
                 <div style={{ padding: "18px 22px 0" }}>
