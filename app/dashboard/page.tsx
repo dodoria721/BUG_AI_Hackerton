@@ -338,14 +338,14 @@ export default function DashboardPage() {
                 <ShipList ships={ships} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} />
               </section>
 
-              {/* 부산항 입출항·정박 현황 (Port-MIS 공식·전수) */}
+              {/* 현재 정박 선박 (Port-MIS 공식·전수) */}
               <section style={{ ...card, padding: "18px 22px" }}>
-                <div style={sectionLabel}>PORT CALLS · PORT-MIS</div>
+                <div style={sectionLabel}>AT BERTH · PORT-MIS</div>
                 <h2 style={{ margin: "6px 0 4px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                  입출항·정박 현황
+                  현재 정박 선박
                 </h2>
                 <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#8a97b3" }}>
-                  해양수산부 Port-MIS 공식 입출항 신고 — 신항 포함 부산항 전체 (선석·직전항·다음항).
+                  해양수산부 Port-MIS 기준 지금 부산항에 정박 중(입항 후 미출항)인 선박 — 신항 포함, 선석·출발지·톤수.
                 </p>
                 <PortCallList />
               </section>

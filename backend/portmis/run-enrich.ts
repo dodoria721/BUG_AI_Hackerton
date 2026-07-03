@@ -14,11 +14,13 @@ import { getSupabase } from "../db/supabase";
 import { fetchShips } from "../ais/ship-source";
 import { fetchBusanPortMisEntries } from "./client";
 import { matchEnrichment } from "./enrich";
-import { toPortCall } from "./portcalls";
+import { toPortCall, isCurrentlyInPort } from "./portcalls";
 import { portCallToRow } from "./portcall-source";
 
 const SERVICE_KEY = process.env.MOF_SHIP_OPERATION_KEY;
-const LOOKBACK_DAYS = 2; // 입출항 신고가 확정되기까지 시차가 있을 수 있어 며칠 여유를 둔다
+// 이 기간 안에 입항해서 아직 출항 안 한 배를 "현재 정박 중"으로 본다. 너무 짧으면 장기
+// 정박선(수리·대기·벌크 등 며칠~몇 주 머무는 배)을 놓치므로 5일로 둔다.
+const LOOKBACK_DAYS = 5;
 
 if (!SERVICE_KEY) {
   console.error("[enrich-portmis] MOF_SHIP_OPERATION_KEY가 없습니다. .env.local에 설정하세요.");
@@ -39,19 +41,23 @@ async function main() {
   const items = await fetchBusanPortMisEntries(SERVICE_KEY!, sde, ede);
   console.log(`[enrich-portmis] 신고 ${items.length}건 조회됨`);
 
-  // 1) port_calls 전수 upsert. (call_sign, vessel_name) 키가 겹치는 건 한 배치에 하나만
-  //    남겨야 upsert가 에러 안 난다 — 최근 신고가 뒤에 오도록 Map으로 dedup.
+  // 1) 현재 정박 중(입항 후 미출항)인 선박만 골라 port_calls를 통째로 교체한다.
+  //    port_calls는 "지금 항내에 있는 배" 스냅샷이라, 지난번에 정박했다가 이미 떠난 배는
+  //    남아있으면 안 된다. 그래서 upsert가 아니라 전체 삭제 후 삽입으로 스냅샷을 갈아끼운다.
+  const inPort = items.filter(isCurrentlyInPort);
   const callMap = new Map<string, ReturnType<typeof portCallToRow>>();
-  for (const item of items) {
+  for (const item of inPort) {
     const row = portCallToRow(toPortCall(item));
-    callMap.set(`${row.call_sign}|${row.vessel_name}`, row);
+    callMap.set(`${row.call_sign}|${row.vessel_name}`, row); // (call_sign, vessel_name) dedup
   }
   const callRows = [...callMap.values()];
-  const { error: pcErr } = await supabase!.from("port_calls").upsert(callRows, {
-    onConflict: "call_sign,vessel_name",
-  });
-  if (pcErr) console.error("[enrich-portmis] port_calls upsert 실패:", pcErr.message);
-  else console.log(`[enrich-portmis] port_calls ${callRows.length}건 저장`);
+
+  const { error: delErr } = await supabase!.from("port_calls").delete().not("vessel_name", "is", null);
+  if (delErr) console.error("[enrich-portmis] port_calls 초기화 실패:", delErr.message);
+
+  const { error: insErr } = await supabase!.from("port_calls").insert(callRows);
+  if (insErr) console.error("[enrich-portmis] port_calls 삽입 실패:", insErr.message);
+  else console.log(`[enrich-portmis] 정박 중 ${callRows.length}척 저장 (전체 신고 ${items.length}건 중)`);
 
   // 2) AIS ships 보강
   const ships = await fetchShips();

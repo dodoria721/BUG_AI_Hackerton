@@ -10,7 +10,9 @@ import type { PortMisDetail, PortMisItem } from "./types";
 const BASE_URL = "https://apis.data.go.kr/1192000/VsslEtrynd5/Info5";
 const BUSAN_PORT_CODE = "020"; // Port-MIS 항구코드 — 부산
 const PAGE_SIZE = 100;
-const MAX_PAGES = 5; // 하루치 트래픽 상한(10,000건/일)을 넘지 않도록 페이지 수 제한
+// 하루치 트래픽 상한(10,000건/일). 정박 판정은 조회기간 내 출항 기록을 봐야 정확한데,
+// 출항 건이 잘리면 이미 떠난 배를 "정박 중"으로 오판할 수 있어 넉넉히 둔다(방향당 최대 1500건).
+const MAX_PAGES = 15;
 
 const BROWSER_HEADERS = {
   "User-Agent":
