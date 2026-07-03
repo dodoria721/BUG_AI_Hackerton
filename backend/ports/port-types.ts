@@ -85,3 +85,21 @@ export interface AdvisorResult {
   recommendations: AdvisorRecommendation[];
   peakTime: string; // ISO 8601
 }
+
+// Port-MIS(해양수산부_선박운항정보) 입출항 신고 1건. AIS(Ship)와 별개의 데이터로, 실시간
+// 위경도는 없지만 부산항 입출항·정박 선박을 공식·전수로 담는다. AIS 커버리지가 희박한
+// 부산신항 등도 여기엔 다 잡히므로, 지도(AIS)와 목록(Port-MIS)의 역할을 나눈다.
+export type PortCallEvent = "입항" | "출항";
+
+export interface PortCall {
+  callSign: string;
+  vesselName: string;
+  vesselType?: string; // 선종 (예: 산물선, 석유제품 운반선)
+  nationality?: string; // 선적국
+  previousPort?: string; // 직전 출항항
+  nextPort?: string; // 다음 기항지
+  event: PortCallEvent; // 가장 최근 신고 종류
+  eventTime?: string; // ISO 8601 — 해당 신고 시각
+  berthName?: string; // 접안/정박 시설명
+  grossTonnage?: number; // 총톤수
+}

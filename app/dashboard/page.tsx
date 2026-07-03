@@ -7,6 +7,7 @@ import type { CSSProperties } from "react";
 import type { CongestionForecast, Ship } from "@/backend/ports/port-types";
 import { BUSAN_PORT } from "@/backend/ports/seed-port";
 import ShipList from "@/frontend/components/ShipList";
+import PortCallList from "@/frontend/components/PortCallList";
 import CongestionChart from "@/frontend/components/CongestionChart";
 import CongestionGauge from "@/frontend/components/CongestionGauge";
 import WeatherCard from "@/frontend/components/WeatherCard";
@@ -325,13 +326,28 @@ export default function DashboardPage() {
                 </section>
               </div>
 
-              {/* 선박 목록 */}
+              {/* 선박 목록 (AIS 실시간 위치 기반) */}
               <section style={{ ...card, padding: "18px 22px" }}>
-                <div style={sectionLabel}>FLEET</div>
-                <h2 style={{ margin: "6px 0 14px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                  선박 목록
+                <div style={sectionLabel}>FLEET · AIS</div>
+                <h2 style={{ margin: "6px 0 4px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
+                  실시간 선박 (AIS)
                 </h2>
+                <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#8a97b3" }}>
+                  위치가 잡히는 선박만 표시됩니다. 부산항 전체 입출항은 아래 Port-MIS 현황을 참고하세요.
+                </p>
                 <ShipList ships={ships} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} />
+              </section>
+
+              {/* 부산항 입출항·정박 현황 (Port-MIS 공식·전수) */}
+              <section style={{ ...card, padding: "18px 22px" }}>
+                <div style={sectionLabel}>PORT CALLS · PORT-MIS</div>
+                <h2 style={{ margin: "6px 0 4px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
+                  입출항·정박 현황
+                </h2>
+                <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#8a97b3" }}>
+                  해양수산부 Port-MIS 공식 입출항 신고 — 신항 포함 부산항 전체 (선석·직전항·다음항).
+                </p>
+                <PortCallList />
               </section>
             </div>
           </>

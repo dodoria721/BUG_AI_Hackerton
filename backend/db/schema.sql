@@ -34,6 +34,26 @@ alter table public.ships add column if not exists gross_tonnage double precision
 alter table public.ships add column if not exists crew_count int;
 alter table public.ships add column if not exists agent_company text;
 
+-- Port-MIS(해양수산부_선박운항정보) 입출항 신고 — 부산항 정박/입출항 선박 전수.
+-- AIS(ships)는 실시간 위치가 있지만 aisstream 무료 커버리지가 희박하다. 이 테이블은
+-- 공식 API 기반이라 신항 포함 전수를 담는다(단 실시간 위경도는 없음).
+-- backend/portmis/run-enrich.ts가 주기적으로 upsert한다.
+create table if not exists public.port_calls (
+  call_sign      text not null,
+  vessel_name    text not null,
+  vessel_type    text,                                 -- 선종
+  nationality    text,                                 -- 선적국
+  previous_port  text,                                 -- 직전 출항항
+  next_port      text,                                 -- 다음 기항지
+  event          text,                                 -- 입항 | 출항 (최근 신고)
+  event_time     timestamptz,                          -- 해당 신고 시각
+  berth_name     text,                                 -- 접안/정박 시설명
+  gross_tonnage  double precision,                     -- 총톤수
+  updated_at     timestamptz not null default now(),
+  -- 호출부호가 빈 소형선도 있어 선박명을 함께 키로 써서 선박당 1행(최신)만 유지한다.
+  primary key (call_sign, vessel_name)
+);
+
 -- 기상청 단기예보 스냅샷 (격자 nx,ny × 예보 대상 시각 단위)
 create table if not exists public.weather_forecasts (
   nx          int not null,
