@@ -342,10 +342,10 @@ export default function DashboardPage() {
               <section style={{ ...card, padding: "18px 22px" }}>
                 <div style={sectionLabel}>AT BERTH · PORT-MIS</div>
                 <h2 style={{ margin: "6px 0 4px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                  현재 정박 선박
+                  현재 정박 선박 (접안 · 묘박)
                 </h2>
                 <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#8a97b3" }}>
-                  해양수산부 Port-MIS 기준 지금 부산항에 정박 중(입항 후 미출항)인 선박 — 신항 포함, 선석·출발지·톤수.
+                  해양수산부 Port-MIS 기준 지금 부산항에 있는 선박 — 부두 접안·박지 묘박을 구분해 표시. 신항 포함, 선석·출발지·톤수.
                 </p>
                 <PortCallList />
               </section>

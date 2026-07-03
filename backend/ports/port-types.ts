@@ -91,6 +91,10 @@ export interface AdvisorResult {
 // 부산신항 등도 여기엔 다 잡히므로, 지도(AIS)와 목록(Port-MIS)의 역할을 나눈다.
 export type PortCallEvent = "입항" | "출항";
 
+// 정박 형태 — 시설명(berthName)으로 파생한다. 접안=부두/선석/안벽 등 시설에 붙음,
+// 묘박=박지/정박지에 닻 내리고 대기.
+export type BerthType = "접안" | "묘박";
+
 export interface PortCall {
   callSign: string;
   vesselName: string;
@@ -101,5 +105,6 @@ export interface PortCall {
   event: PortCallEvent; // 가장 최근 신고 종류
   eventTime?: string; // ISO 8601 — 해당 신고 시각
   berthName?: string; // 접안/정박 시설명
+  berthType?: BerthType; // 접안 | 묘박 (berthName에서 파생)
   grossTonnage?: number; // 총톤수
 }

@@ -3,6 +3,7 @@
 
 import type { PortCall, PortCallEvent } from "../ports/port-types";
 import { getSupabase } from "../db/supabase";
+import { classifyBerth } from "./portcalls";
 
 interface PortCallRow {
   call_sign: string;
@@ -42,7 +43,7 @@ function rowToPortCall(r: PortCallRow): PortCall {
     ...(r.previous_port ? { previousPort: r.previous_port } : {}),
     ...(r.next_port ? { nextPort: r.next_port } : {}),
     ...(r.event_time ? { eventTime: new Date(r.event_time).toISOString() } : {}),
-    ...(r.berth_name ? { berthName: r.berth_name } : {}),
+    ...(r.berth_name ? { berthName: r.berth_name, berthType: classifyBerth(r.berth_name) } : {}),
     ...(r.gross_tonnage != null ? { grossTonnage: r.gross_tonnage } : {}),
   };
 }

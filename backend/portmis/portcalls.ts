@@ -4,8 +4,15 @@
 // 항내에 있는 배로 본다. 입항만 있고 출항이 없으면 당연히 정박 중, 입항·출항 시각이 같으면
 // (당일 입출항) 이미 떠난 것으로 본다.
 
-import type { PortCall } from "../ports/port-types";
+import type { BerthType, PortCall } from "../ports/port-types";
 import type { PortMisDetail, PortMisItem } from "./types";
+
+// 시설명으로 접안/묘박을 판정한다. "박지/묘지/정박지"는 닻을 내리는 대기 지점(묘박),
+// 그 외(부두·선석·물량장·안벽·호안·조선소·돌핀·터미널 등)는 시설에 붙는 접안이다.
+export function classifyBerth(berthName: string | undefined | null): BerthType | undefined {
+  if (!berthName) return undefined;
+  return /박지|묘지/.test(berthName) ? "묘박" : "접안";
+}
 
 function timeOf(v: string | undefined): number {
   return v ? new Date(v).getTime() : NaN;
@@ -67,6 +74,7 @@ export function toPortCall(item: PortMisItem): PortCall {
     event: "입항", // 정박 중 = 입항 상태
     eventTime: arrival?.etryptDt ? new Date(arrival.etryptDt).toISOString() : undefined,
     berthName: arrival?.laidupFcltyNm,
+    berthType: classifyBerth(arrival?.laidupFcltyNm),
     grossTonnage: arrival?.grtg ? Number(arrival.grtg) : undefined,
   };
 }
