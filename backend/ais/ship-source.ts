@@ -70,15 +70,22 @@ export function shipToRow(
   };
 }
 
+// ships 테이블은 upsert만 하고 지우지 않는다 — 배가 부산항 권역을 떠나거나 AIS 신호가
+// 끊겨도 마지막 위치가 그대로 남는다. AIS(Class A 기준)는 정박 중에도 최소 몇 분 간격으로
+// 재송신하므로, 이 시간 넘게 갱신이 없으면 더 이상 근처에 없는 배로 보고 제외한다.
+const STALE_THRESHOLD_MINUTES = 20;
+
 /**
  * 현재 선박 목록을 반환한다.
- * DB가 설정돼 있고 데이터가 있으면 DB에서, 아니면 목업에서 읽는다.
+ * DB가 설정돼 있고 최근(STALE_THRESHOLD_MINUTES 이내) 갱신된 데이터가 있으면 DB에서,
+ * 아니면(미설정·오류·전부 오래됨) 목업에서 읽는다.
  */
 export async function fetchShips(): Promise<Ship[]> {
   const db = getSupabase();
   if (!db) return MOCK_SHIPS;
 
-  const { data, error } = await db.from("ships").select("*");
+  const cutoff = new Date(Date.now() - STALE_THRESHOLD_MINUTES * 60_000).toISOString();
+  const { data, error } = await db.from("ships").select("*").gte("updated_at", cutoff);
   if (error) {
     console.error("[ship-source] Supabase 조회 실패, 목업으로 폴백:", error.message);
     return MOCK_SHIPS;
