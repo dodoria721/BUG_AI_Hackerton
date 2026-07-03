@@ -4,6 +4,9 @@ import { fetchShortTermForecast } from "@/backend/weather/kma";
 import { saveForecast } from "@/backend/weather/store";
 
 export const runtime = "nodejs";
+// ships/route.ts와 동일한 이유 — 내부 fetch(KMA API, Supabase) 캐싱을 명시적으로 끈다.
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 export async function GET() {
   try {
