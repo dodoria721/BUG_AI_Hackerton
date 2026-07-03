@@ -37,6 +37,10 @@ if (!supabase) {
   process.exit(1);
 }
 
+// 장시간 켜두는 스크립트라, 예상 못 한 예외로 조용히 죽는 대신 로그를 남기고 계속 돈다.
+process.on("unhandledRejection", (err) => console.error("[ingest-aisstream] unhandledRejection:", err));
+process.on("uncaughtException", (err) => console.error("[ingest-aisstream] uncaughtException:", err));
+
 // MMSI별 최신 ShipStaticData(이름·목적지) 캐시 — PositionReport에는 목적지가 안 실려온다.
 const staticInfoByMmsi = new Map<string, StaticInfo>();
 // 다음 flush까지 모아둘 변경분. MMSI당 최신 값만 남기면 되므로 Map이면 충분하다.
@@ -50,6 +54,7 @@ subscribeAisStream({
   boundingBoxes: [boundingBox],
   onStatus: (status, detail) => {
     if (status === "error") console.error("[ingest-aisstream] error:", detail);
+    else if (status === "watchdog-reconnect") console.warn("[ingest-aisstream] watchdog 재연결:", detail);
     else console.log(`[ingest-aisstream] ${status}`);
   },
   onMessage: (msg) => {
@@ -78,9 +83,14 @@ async function flush() {
   const rows = [...pendingShips.values()].map(shipToRow);
   pendingShips.clear();
 
-  const { error } = await supabase!.from("ships").upsert(rows, { onConflict: "mmsi" });
-  if (error) console.error("[ingest-aisstream] upsert 실패:", error.message);
-  else console.log(`[ingest-aisstream] ${rows.length}척 갱신`);
+  try {
+    const { error } = await supabase!.from("ships").upsert(rows, { onConflict: "mmsi" });
+    if (error) console.error("[ingest-aisstream] upsert 실패:", error.message);
+    else console.log(`[ingest-aisstream] ${rows.length}척 갱신`);
+  } catch (err) {
+    // 네트워크 예외 등으로 upsert 자체가 throw해도 setInterval 루프는 계속 돌아야 한다.
+    console.error("[ingest-aisstream] upsert 예외:", err);
+  }
 }
 
 setInterval(flush, FLUSH_INTERVAL_MS);
