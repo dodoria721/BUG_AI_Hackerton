@@ -15,6 +15,7 @@ export interface Basemap {
   attribution: string;
   hybrid?: string; // 위성 배경 위에 지명·도로 라벨을 겹칠 오버레이 타일
   note?: string; // 비활성일 때 안내 문구
+  separator?: boolean; // 드롭다운에서 위쪽에 구분선을 그어 그룹을 나눌 항목
 }
 
 const CARTO_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
@@ -66,6 +67,7 @@ function buildBasemaps(): Basemap[] {
       url: ENC_TILE_URL || null,
       attribution: '&copy; <a href="https://www.khoa.go.kr">국립해양조사원</a>',
       note: "NEXT_PUBLIC_ENC_TILE_URL 설정 필요",
+      separator: true, // 일반 배경들과 시각적으로 구분
     },
   ];
 }

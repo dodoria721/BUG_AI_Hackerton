@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { BerthType, PortCall } from "@/backend/ports/port-types";
+import { RIGHT_PANEL_RIGHT, RIGHT_PANEL_WIDTH } from "./layout";
 
 // MOVIDIK 스타일 우측 선박 패널 — 검색 + 필터 탭 + 선박 목록 + 선택 선박 상세 카드.
 // 데이터는 Port-MIS 정박선(PortCall). 실시간 위경도/속력은 AIS 쪽(지도)에 있고, 여기선
@@ -62,10 +63,10 @@ export default function VesselPanel({ calls, selectedKey, onSelect }: VesselPane
       style={{
         position: "absolute",
         top: 16,
-        right: 76, // 우측 세로 툴바(레일) 자리를 비운다
+        right: RIGHT_PANEL_RIGHT, // 우측 세로 툴바(레일) 자리를 비운다
         bottom: 16,
-        width: 372,
-        maxWidth: "calc(100vw - 108px)",
+        width: RIGHT_PANEL_WIDTH,
+        maxWidth: `calc(100vw - ${RIGHT_PANEL_RIGHT + 32}px)`,
         zIndex: 500,
         display: "flex",
         flexDirection: "column",

@@ -8,6 +8,7 @@ import { BUSAN_PORT } from "@/backend/ports/seed-port";
 import VesselPanel from "@/frontend/components/VesselPanel";
 import AdvisorPanel from "@/frontend/components/AdvisorPanel";
 import { BASEMAPS, BASEMAP_STORAGE, initialBasemapId, type Basemap } from "@/frontend/components/basemaps";
+import { RIGHT_LEGEND_RIGHT } from "@/frontend/components/layout";
 
 // Leaflet은 window에 의존하므로 서버에서 렌더링하면 안 된다.
 const ShipMap = dynamic(() => import("@/frontend/components/ShipMap"), { ssr: false });
@@ -46,6 +47,11 @@ const LAYER_ITEMS: { key: LayerKey; label: string; icon: string }[] = [
   { key: "legend", label: "범례", icon: "🎨" },
 ];
 const LAYERS_STORAGE = "portiq.layers";
+
+// localStorage 저장 — SSR 가드를 한 곳으로 모은다.
+function saveLocal(key: string, value: string) {
+  if (typeof window !== "undefined") window.localStorage.setItem(key, value);
+}
 
 function initialLayers(): Record<LayerKey, boolean> {
   const def: Record<LayerKey, boolean> = { vessels: true, congestion: true, legend: true };
@@ -145,7 +151,7 @@ export default function DashboardPage() {
   function toggleLayer(k: LayerKey) {
     setLayers((prev) => {
       const next = { ...prev, [k]: !prev[k] };
-      if (typeof window !== "undefined") window.localStorage.setItem(LAYERS_STORAGE, JSON.stringify(next));
+      saveLocal(LAYERS_STORAGE, JSON.stringify(next));
       return next;
     });
   }
@@ -154,7 +160,7 @@ export default function DashboardPage() {
     if (!b.url) return; // 비활성(설정 필요) 항목은 무시
     setBasemapId(b.id);
     setOpenMenu(null);
-    if (typeof window !== "undefined") window.localStorage.setItem(BASEMAP_STORAGE, b.id);
+    saveLocal(BASEMAP_STORAGE, b.id);
   }
 
   const currentBasemap = BASEMAPS.find((b) => b.id === basemapId) ?? BASEMAPS[0];
@@ -299,9 +305,9 @@ export default function DashboardPage() {
                   color: disabled ? "#5a6b8c" : on ? "#fff" : "#c7d3ea",
                   background: on ? "rgba(56,120,255,.16)" : "transparent",
                   cursor: disabled ? "not-allowed" : "pointer",
-                  marginTop: b.id === "enc" ? 6 : 0,
-                  borderTop: b.id === "enc" ? "1px solid rgba(255,255,255,.08)" : "none",
-                  paddingTop: b.id === "enc" ? 12 : 8,
+                  marginTop: b.separator ? 6 : 0,
+                  borderTop: b.separator ? "1px solid rgba(255,255,255,.08)" : "none",
+                  paddingTop: b.separator ? 12 : 8,
                 }}
               >
                 <span style={{ fontSize: 14, width: 16, textAlign: "center", opacity: disabled ? 0.5 : 1 }}>{b.icon}</span>
@@ -376,7 +382,7 @@ export default function DashboardPage() {
         style={{
           position: "absolute",
           top: 16,
-          right: 464,
+          right: RIGHT_LEGEND_RIGHT,
           zIndex: 500,
           padding: "10px 14px",
           background: panel,
