@@ -47,10 +47,49 @@ export function computeCongestionForecast(
 const PORT_PAST_HOURS = 6;
 const PORT_FUTURE_HOURS = 18;
 
+export interface PortCongestionOptions {
+  currentInPortCount?: number;
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function round2(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+export function computePortCongestionBreakdown(
+  arrivals: number,
+  currentInPortCount: number,
+  config: PortConfig
+): Pick<CongestionPoint, "level" | "arrivals" | "currentInPort" | "arrivalCapacity" | "arrivalPressure" | "inPortPressure"> {
+  const arrivalCapacity = Math.max(1, config.arrivalCapacityPerHour);
+  const safeArrivals = Math.max(0, arrivals);
+  const safeCurrentInPort = Math.max(0, currentInPortCount);
+
+  const arrivalPressure = clamp01(safeArrivals / arrivalCapacity);
+  // 현재 정박 선박은 선석/터미널 배정을 보지 않고, Port-MIS 전수 스냅샷의 "재고 압력"으로만 반영한다.
+  // 별도 체류 용량 상수를 만들지 않기 위해 기존 Port-MIS 시간당 처리량을 기준으로 0~1에 수렴시킨다.
+  const inPortPressure =
+    safeCurrentInPort === 0 ? 0 : clamp01(safeCurrentInPort / (safeCurrentInPort + arrivalCapacity));
+  const level = clamp01(1 - (1 - arrivalPressure) * (1 - inPortPressure));
+
+  return {
+    level: round2(level),
+    arrivals: safeArrivals,
+    currentInPort: safeCurrentInPort,
+    arrivalCapacity,
+    arrivalPressure: round2(arrivalPressure),
+    inPortPressure: round2(inPortPressure),
+  };
+}
+
 export function computePortCongestion(
   arrivalTimesIso: string[],
   config: PortConfig,
-  now: Date = new Date()
+  now: Date = new Date(),
+  options: PortCongestionOptions = {}
 ): CongestionForecast {
   const startHour = new Date(now);
   startHour.setMinutes(0, 0, 0);
@@ -63,14 +102,21 @@ export function computePortCongestion(
     if (idx >= 0 && idx < totalBuckets) counts[idx]++;
   }
 
+  const currentInPortCount = options.currentInPortCount ?? 0;
   const forecast: CongestionPoint[] = counts.map((c, i) => ({
     time: new Date(startHour.getTime() + i * 3_600_000).toISOString(),
-    level: Number(Math.min(1, c / config.arrivalCapacityPerHour).toFixed(2)),
-    arrivals: c,
+    ...computePortCongestionBreakdown(c, currentInPortCount, config),
   }));
 
   // 현재 시각이 속한 버킷(= 과거 오프셋 다음 칸)이 지금 혼잡도.
   const currentLevel = forecast[PORT_PAST_HOURS]?.level ?? 0;
 
-  return { port: config.name, currentLevel, forecast };
+  return {
+    port: config.name,
+    currentLevel,
+    forecast,
+    source: "port-mis",
+    basis: "port-mis-arrivals-and-current-in-port",
+    lastUpdated: now.toISOString(),
+  };
 }

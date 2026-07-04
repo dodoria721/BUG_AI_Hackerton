@@ -4,11 +4,13 @@
 import type { CongestionForecast } from "../ports/port-types";
 import { BUSAN_PORT } from "../ports/seed-port";
 import { getSupabase } from "../db/supabase";
+import { computePortCongestionBreakdown } from "../prediction/congestion";
 
 interface CongestionRow {
   bucket_time: string;
   arrivals: number;
   level: number;
+  updated_at?: string;
 }
 
 /** 계산된 혼잡도 곡선을 스냅샷으로 저장한다(전체 교체). */
@@ -28,6 +30,18 @@ export async function savePortCongestion(forecast: CongestionForecast): Promise<
   const { error: insErr } = await db.from("port_congestion").insert(rows);
   if (insErr) return { ok: false, error: insErr.message };
   return { ok: true };
+}
+
+async function fetchCurrentInPortCount(db: NonNullable<ReturnType<typeof getSupabase>>): Promise<number> {
+  const { count, error } = await db
+    .from("port_calls")
+    .select("vessel_name", { count: "exact", head: true })
+    .lte("event_time", new Date().toISOString());
+  if (error) {
+    console.error("[congestion-source] 현재 정박 선박 수 조회 실패:", error.message);
+    return 0;
+  }
+  return count ?? 0;
 }
 
 /**
@@ -50,19 +64,23 @@ export async function fetchPortCongestion(): Promise<CongestionForecast | null> 
   if (!data || data.length === 0) return null;
 
   const rows = data as CongestionRow[];
+  const currentInPortCount = await fetchCurrentInPortCount(db);
   const forecast = rows.map((r) => ({
     time: new Date(r.bucket_time).toISOString(),
-    level: r.level,
-    arrivals: r.arrivals,
+    ...computePortCongestionBreakdown(r.arrivals, currentInPortCount, BUSAN_PORT),
   }));
 
   const nowHour = new Date();
   nowHour.setMinutes(0, 0, 0);
   const current = forecast.find((p) => p.time === nowHour.toISOString());
+  const currentFallback = computePortCongestionBreakdown(0, currentInPortCount, BUSAN_PORT);
 
   return {
     port: BUSAN_PORT.name,
-    currentLevel: current?.level ?? 0,
+    currentLevel: current?.level ?? currentFallback.level,
     forecast,
+    source: "port-mis",
+    basis: "port-mis-arrivals-and-current-in-port",
+    lastUpdated: rows[0]?.updated_at ? new Date(rows[0].updated_at).toISOString() : undefined,
   };
 }

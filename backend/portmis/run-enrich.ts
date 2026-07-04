@@ -54,7 +54,8 @@ async function main() {
   // 1) 현재 정박 중(입항 후 미출항)인 선박만 골라 port_calls를 통째로 교체한다.
   //    port_calls는 "지금 항내에 있는 배" 스냅샷이라, 지난번에 정박했다가 이미 떠난 배는
   //    남아있으면 안 된다. 그래서 upsert가 아니라 전체 삭제 후 삽입으로 스냅샷을 갈아끼운다.
-  const inPort = items.filter(isCurrentlyInPort);
+  const snapshotNow = new Date();
+  const inPort = items.filter((item) => isCurrentlyInPort(item, snapshotNow));
   const callMap = new Map<string, ReturnType<typeof portCallToRow>>();
   for (const item of inPort) {
     const row = portCallToRow(toPortCall(item));
@@ -76,7 +77,9 @@ async function main() {
       if (d.etryndNm === "입항" && d.etryptDt) arrivalTimes.push(d.etryptDt);
     }
   }
-  const congestion = computePortCongestion(arrivalTimes, BUSAN_PORT);
+  const congestion = computePortCongestion(arrivalTimes, BUSAN_PORT, snapshotNow, {
+    currentInPortCount: callRows.length,
+  });
   const saved = await savePortCongestion(congestion);
   if (!saved.ok) console.error("[enrich-portmis] 혼잡도 저장 실패:", saved.error);
   else console.log(`[enrich-portmis] 혼잡도 저장 (현재 ${Math.round(congestion.currentLevel * 100)}%, ${congestion.forecast.length}구간)`);

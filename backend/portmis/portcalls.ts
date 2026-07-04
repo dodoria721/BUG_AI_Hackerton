@@ -23,9 +23,10 @@ interface Analysis {
   arrival?: PortMisDetail; // 대표 입항 detail (선석·시각의 출처)
 }
 
-function analyze(item: PortMisItem): Analysis {
-  const arrivals = item.details.filter((d) => d.etryndNm === "입항" && d.etryptDt);
-  const departures = item.details.filter((d) => d.etryndNm === "출항" && d.tkoffDt);
+function analyze(item: PortMisItem, now: Date = new Date()): Analysis {
+  const nowMs = now.getTime();
+  const arrivals = item.details.filter((d) => d.etryndNm === "입항" && d.etryptDt && timeOf(d.etryptDt) <= nowMs);
+  const departures = item.details.filter((d) => d.etryndNm === "출항" && d.tkoffDt && timeOf(d.tkoffDt) <= nowMs);
 
   const lastArrival = arrivals.sort((a, b) => timeOf(b.etryptDt) - timeOf(a.etryptDt))[0];
   const lastDeparture = departures.sort((a, b) => timeOf(b.tkoffDt) - timeOf(a.tkoffDt))[0];
@@ -36,8 +37,8 @@ function analyze(item: PortMisItem): Analysis {
 }
 
 /** 이 선박이 현재 부산항에 정박(입항 후 미출항) 중인가. */
-export function isCurrentlyInPort(item: PortMisItem): boolean {
-  return analyze(item).inPort;
+export function isCurrentlyInPort(item: PortMisItem, now: Date = new Date()): boolean {
+  return analyze(item, now).inPort;
 }
 
 // 하루 단위로 여러 번 조회하면 같은 선박이 여러 item으로 흩어져 온다(입항일 item, 출항일 item

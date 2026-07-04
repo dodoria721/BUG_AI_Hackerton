@@ -79,12 +79,19 @@ export interface CongestionPoint {
   time: string; // ISO 8601
   level: number; // 0~1
   arrivals?: number; // 해당 시간대 입항 신고 건수 (Port-MIS 기반일 때)
+  currentInPort?: number; // 현재 정박/항내 선박 수 (Port-MIS port_calls 스냅샷)
+  arrivalCapacity?: number; // Port-MIS 시간당 입항 처리량 기준
+  arrivalPressure?: number; // 입항 예정 선박 수 기반 압력
+  inPortPressure?: number; // 현재 정박 선박 수 기반 압력
 }
 
 export interface CongestionForecast {
   port: string;
   currentLevel: number; // 0~1
   forecast: CongestionPoint[];
+  source?: string;
+  basis?: string;
+  lastUpdated?: string;
 }
 
 export interface AdvisorRecommendation {
