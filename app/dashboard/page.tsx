@@ -3,137 +3,61 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import type { CSSProperties } from "react";
 import type { CongestionForecast, PortCall, Ship } from "@/backend/ports/port-types";
 import { BUSAN_PORT } from "@/backend/ports/seed-port";
-import ShipList from "@/frontend/components/ShipList";
-import PortCallList from "@/frontend/components/PortCallList";
-import CongestionChart from "@/frontend/components/CongestionChart";
-import CongestionGauge from "@/frontend/components/CongestionGauge";
-import WeatherCard from "@/frontend/components/WeatherCard";
+import VesselPanel from "@/frontend/components/VesselPanel";
 import AdvisorPanel from "@/frontend/components/AdvisorPanel";
 
 // Leaflet은 window에 의존하므로 서버에서 렌더링하면 안 된다.
 const ShipMap = dynamic(() => import("@/frontend/components/ShipMap"), { ssr: false });
 
-// PORTIQ 카드 공통 스타일
-const card: CSSProperties = {
-  background: "#fff",
-  border: "1px solid rgba(10,24,48,.07)",
-  borderRadius: 22,
-  boxShadow: "0 10px 30px rgba(20,40,90,.06)",
-};
+const muted = "#8aa0c8";
+const panel = "rgba(11,18,34,0.82)";
+const border = "1px solid rgba(120,160,255,0.14)";
 
-const sectionLabel: CSSProperties = {
-  fontSize: 12.5,
-  fontWeight: 800,
-  letterSpacing: ".08em",
-  color: "#2f6bff",
-};
-
-// 혼잡도(0~1) → seed-port 임계값 기반 색상
 function congestionColor(level: number): string {
   const { low, medium } = BUSAN_PORT.congestionThresholds;
-  if (level <= low) return "#16a34a";
-  if (level <= medium) return "#e8952b";
-  return "#e0483d";
+  if (level <= low) return "#34d399";
+  if (level <= medium) return "#fbbf24";
+  return "#f87171";
 }
 
-interface KpiProps {
-  label: string;
-  value: string;
-  unit?: string;
-  accent?: string;
-  hint?: string;
-  gradient?: boolean;
-}
-
-function KpiCard({ label, value, unit, accent, hint, gradient }: KpiProps) {
-  const dark = gradient;
+// 상단 텔레메트리 바의 지표 한 칸
+function Metric({ label, value, unit, accent }: { label: string; value: string; unit?: string; accent?: string }) {
   return (
-    <div
-      style={{
-        ...card,
-        padding: "18px 20px",
-        ...(dark
-          ? { background: "linear-gradient(135deg,#2f6bff,#4d7cff)", border: "none", color: "#fff" }
-          : {}),
-      }}
-    >
-      <div
-        style={{
-          fontSize: 12.5,
-          fontWeight: 700,
-          color: dark ? "rgba(255,255,255,.85)" : "#6b7a99",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 30,
-          fontWeight: 800,
-          letterSpacing: "-.02em",
-          color: dark ? "#fff" : accent ?? "#0a1830",
-        }}
-      >
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 62 }}>
+      <div style={{ fontSize: 10.5, color: muted, fontWeight: 700, letterSpacing: ".04em" }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, color: accent ?? "#e7ecf5", lineHeight: 1.2 }}>
         {value}
-        {unit && (
-          <span
-            style={{
-              fontSize: 15,
-              fontWeight: 700,
-              marginLeft: 3,
-              color: dark ? "rgba(255,255,255,.85)" : "#6b7a99",
-            }}
-          >
-            {unit}
-          </span>
-        )}
+        {unit && <span style={{ fontSize: 11, color: muted, marginLeft: 2 }}>{unit}</span>}
       </div>
-      {hint && (
-        <div
-          style={{
-            marginTop: 4,
-            fontSize: 12,
-            fontWeight: 700,
-            color: dark ? "rgba(255,255,255,.9)" : "#8a97b3",
-          }}
-        >
-          {hint}
-        </div>
-      )}
     </div>
   );
 }
+
+const RAIL_ICONS = ["🗺️", "🚢", "⚓", "📊", "⚙️"];
 
 export default function DashboardPage() {
   const [ships, setShips] = useState<Ship[]>([]);
   const [congestion, setCongestion] = useState<CongestionForecast | null>(null);
   const [portCalls, setPortCalls] = useState<PortCall[]>([]);
   const [selectedMmsi, setSelectedMmsi] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [selectedVessel, setSelectedVessel] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-
     async function load() {
-      const [shipsRes, congestionRes, callsRes] = await Promise.all([
-        fetch("/api/ships"),
-        fetch("/api/congestion"),
-        fetch("/api/port-calls"),
+      const [s, cg, pc] = await Promise.all([
+        fetch("/api/ships").then((r) => r.json()),
+        fetch("/api/congestion").then((r) => r.json()),
+        fetch("/api/port-calls").then((r) => r.json()),
       ]);
       if (!active) return;
-      setShips(await shipsRes.json());
-      setCongestion(await congestionRes.json());
-      const calls = await callsRes.json();
-      setPortCalls(Array.isArray(calls) ? calls : []);
-      setLoading(false);
+      setShips(Array.isArray(s) ? s : []);
+      setCongestion(cg && cg.forecast ? cg : null);
+      setPortCalls(Array.isArray(pc) ? pc : []);
     }
-
     load();
-    // 30초마다 폴링해 최신 현황·혼잡도를 반영한다.
     const timer = setInterval(load, 30_000);
     return () => {
       active = false;
@@ -141,223 +65,195 @@ export default function DashboardPage() {
     };
   }, []);
 
-  // 현황 수치는 Port-MIS(전수) 기반. 지도 마커만 AIS(위치 필요).
   const berthed = portCalls.filter((c) => c.berthType === "접안").length;
   const anchoredPm = portCalls.filter((c) => c.berthType === "묘박").length;
   const level = congestion?.currentLevel ?? 0;
-  const levelPct = Math.round(level * 100);
 
   return (
-    <div className="portiq" style={{ color: "#0a1830", background: "#f4f7ff", minHeight: "100vh" }}>
-      {/* NAV */}
-      <nav
+    <div style={{ position: "fixed", inset: 0, background: "#070c17", overflow: "hidden", fontFamily: "Pretendard, system-ui, sans-serif" }}>
+      {/* 배경 지도 */}
+      <div style={{ position: "absolute", inset: 0 }}>
+        <ShipMap ships={ships} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} portCalls={portCalls} />
+      </div>
+      {/* 다크 무드 틴트 (지도 클릭 방해 안 함) */}
+      <div
         style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 400,
+          background: "radial-gradient(120% 80% at 50% 0%, rgba(7,12,23,0) 55%, rgba(7,12,23,.45) 100%)",
+        }}
+      />
+
+      {/* 좌측 아이콘 레일 */}
+      <div
+        style={{
+          position: "absolute",
+          top: 16,
+          left: 16,
+          bottom: 16,
+          width: 52,
+          zIndex: 500,
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
-          justifyContent: "space-between",
-          height: 72,
-          padding: "0 32px",
-          background: "rgba(244,247,255,.72)",
+          gap: 6,
+          padding: "12px 0",
+          background: panel,
           backdropFilter: "blur(14px)",
-          borderBottom: "1px solid rgba(10,24,48,.06)",
+          border,
+          borderRadius: 14,
         }}
       >
         <Link
           href="/"
-          style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", color: "#0a1830" }}
+          title="홈"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 9,
+            background: "linear-gradient(135deg,#2f6bff,#5b8cff)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 8,
+            textDecoration: "none",
+          }}
         >
+          <div style={{ width: 12, height: 12, border: "2.5px solid #fff", borderRadius: "50%", borderRightColor: "transparent" }} />
+        </Link>
+        {RAIL_ICONS.map((ic, i) => (
           <div
+            key={i}
             style={{
-              width: 30,
-              height: 30,
-              borderRadius: 9,
-              background: "linear-gradient(135deg,#2f6bff,#5b8cff)",
+              width: 40,
+              height: 40,
+              borderRadius: 10,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: "0 6px 16px rgba(47,107,255,.35)",
+              fontSize: 17,
+              color: muted,
+              background: i === 0 ? "rgba(56,189,248,.12)" : "transparent",
+              cursor: "pointer",
             }}
           >
-            <div
-              style={{
-                width: 11,
-                height: 11,
-                border: "2.5px solid #fff",
-                borderRadius: "50%",
-                borderRightColor: "transparent",
-              }}
-            />
+            {ic}
           </div>
-          <span style={{ fontWeight: 800, fontSize: 19, letterSpacing: "-.02em" }}>PORTIQ</span>
-          <span style={{ fontSize: 13, color: "#8a97b3", marginLeft: 6, fontWeight: 600 }}>
-            실시간 대시보드
-          </span>
-        </Link>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#16a34a",
-              background: "#eafaf0",
-              padding: "6px 12px",
-              borderRadius: 999,
-            }}
-          >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "#16a34a",
-                animation: "portiq-barpulse 1.4s infinite",
-              }}
-            />
-            LIVE · 30초 갱신
-          </div>
-          <Link
-            href="/"
-            className="portiq-link"
-            style={{ fontSize: 14, fontWeight: 600, color: "#3a4a66", textDecoration: "none" }}
-          >
-            ← 홈으로
-          </Link>
+        ))}
+      </div>
+
+      {/* 상단 텔레메트리 바 (항만 종합 현황) */}
+      <div
+        style={{
+          position: "absolute",
+          top: 16,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 500,
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          padding: "10px 22px",
+          background: panel,
+          backdropFilter: "blur(14px)",
+          border,
+          borderRadius: 14,
+          color: "#e7ecf5",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", marginRight: 4 }}>
+          <span style={{ fontWeight: 900, fontSize: 15, letterSpacing: "-.01em" }}>PORTIQ</span>
+          <span style={{ fontSize: 10, color: muted, fontWeight: 700 }}>{BUSAN_PORT.name} 실시간 관제</span>
         </div>
-      </nav>
+        <div style={{ width: 1, height: 30, background: "rgba(255,255,255,.1)" }} />
+        <Metric label="정박" value={String(portCalls.length)} unit="척" />
+        <Metric label="접안" value={String(berthed)} unit="척" accent="#34d399" />
+        <Metric label="묘박" value={String(anchoredPm)} unit="척" accent="#fbbf24" />
+        <Metric label="AIS 위치" value={String(ships.length)} unit="척" accent="#38bdf8" />
+        <div style={{ width: 1, height: 30, background: "rgba(255,255,255,.1)" }} />
+        <Metric label="혼잡도" value={String(Math.round(level * 100))} unit="%" accent={congestionColor(level)} />
+      </div>
 
-      <main style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px 64px" }}>
-        {/* 헤더 */}
-        <div style={{ marginBottom: 22 }}>
-          <div style={sectionLabel}>LIVE DASHBOARD</div>
-          <h1 style={{ margin: "8px 0 0", fontSize: 30, fontWeight: 800, letterSpacing: "-.03em" }}>
-            {BUSAN_PORT.name} 실시간 현황
-          </h1>
-          <p style={{ margin: "6px 0 0", fontSize: 15, color: "#5a6785" }}>
-            선박 위치·상태와 혼잡도 예측, AI 운영 권고를 한 화면에서 확인하세요.
-          </p>
-        </div>
-
-        {loading ? (
-          <div
-            style={{
-              ...card,
-              padding: "60px 0",
-              textAlign: "center",
-              color: "#8a97b3",
-              fontWeight: 600,
-            }}
-          >
-            불러오는 중...
+      {/* 범례 */}
+      <div
+        style={{
+          position: "absolute",
+          top: 16,
+          right: 404,
+          zIndex: 500,
+          padding: "10px 14px",
+          background: panel,
+          backdropFilter: "blur(14px)",
+          border,
+          borderRadius: 12,
+          color: "#e7ecf5",
+          fontSize: 11.5,
+          fontWeight: 700,
+        }}
+      >
+        <div style={{ color: muted, fontSize: 10, marginBottom: 6, letterSpacing: ".08em" }}>범례</div>
+        {[
+          ["#38bdf8", "항해 중 (AIS)"],
+          ["#4ade80", "접안"],
+          ["#fbbf24", "묘박"],
+        ].map(([c, t]) => (
+          <div key={t} style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 4 }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: c }} />
+            {t}
           </div>
-        ) : (
-          <>
-            {/* KPI 행 */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, 1fr)",
-                gap: 16,
-                marginBottom: 16,
-              }}
-            >
-              <KpiCard label="현재 정박 선박" value={String(portCalls.length)} unit="척" hint="Port-MIS 기준" />
-              <KpiCard label="접안" value={String(berthed)} unit="척" hint="부두·선석" />
-              <KpiCard label="묘박" value={String(anchoredPm)} unit="척" hint="박지 대기" />
-              <KpiCard
-                label="현재 혼잡도"
-                value={String(levelPct)}
-                unit="%"
-                accent={congestionColor(level)}
-                hint={
-                  level <= BUSAN_PORT.congestionThresholds.low
-                    ? "원활 · 입항 신고 기준"
-                    : level <= BUSAN_PORT.congestionThresholds.medium
-                      ? "보통 · 입항 신고 기준"
-                      : "혼잡 · 입항 신고 기준"
-                }
-              />
-            </div>
+        ))}
+      </div>
 
-            {/* 메인 — 세로 단일 컬럼 */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {/* 기상 현황 */}
-              <WeatherCard />
+      {/* 우측 선박 패널 */}
+      <VesselPanel calls={portCalls} selectedKey={selectedVessel} onSelect={setSelectedVessel} />
 
-              {/* 지도 */}
-              <section style={{ ...card, overflow: "hidden" }}>
-                <div style={{ padding: "18px 22px 0" }}>
-                  <div style={sectionLabel}>SHIP MAP</div>
-                  <h2 style={{ margin: "6px 0 14px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                    실시간 선박 위치
-                  </h2>
-                </div>
-                <div style={{ height: 460, margin: "0 -1px -1px", overflow: "hidden", borderRadius: "0 0 22px 22px" }}>
-                  <ShipMap
-                    ships={ships}
-                    selectedMmsi={selectedMmsi}
-                    onSelect={setSelectedMmsi}
-                    portCalls={portCalls}
-                  />
-                </div>
-              </section>
+      {/* 좌하단 혼잡도 미니 패널 (인라인 막대) */}
+      {congestion && (
+        <div
+          style={{
+            position: "absolute",
+            left: 84,
+            bottom: 16,
+            width: 380,
+            maxWidth: "calc(100vw - 480px)",
+            zIndex: 500,
+            padding: "12px 14px 10px",
+            background: panel,
+            backdropFilter: "blur(14px)",
+            border,
+            borderRadius: 14,
+            color: "#e7ecf5",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em" }}>시간대별 혼잡도</span>
+            <span style={{ fontSize: 10.5, color: muted }}>Port-MIS 입항 신고 · 최근 6h~향후 18h</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 56 }}>
+            {congestion.forecast.map((p, i) => {
+              const now = Date.now();
+              const isNow = Math.abs(new Date(p.time).getTime() - now) < 30 * 60 * 1000;
+              return (
+                <div
+                  key={i}
+                  title={`${new Date(p.time).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} · 입항 ${p.arrivals ?? 0}건`}
+                  style={{
+                    flex: 1,
+                    height: `${Math.max(4, p.level * 100)}%`,
+                    borderRadius: "3px 3px 1px 1px",
+                    background: isNow ? "#38bdf8" : congestionColor(p.level),
+                    opacity: isNow ? 1 : 0.72,
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-              {/* 혼잡도 — 게이지 카드 + 추이 차트 카드 분리 */}
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, .8fr) 2fr", gap: 16 }}>
-                <section style={{ ...card, padding: "18px 22px" }}>
-                  <div style={sectionLabel}>CONGESTION</div>
-                  <h2 style={{ margin: "6px 0 14px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                    현재 혼잡도
-                  </h2>
-                  <CongestionGauge level={level} />
-                </section>
-
-                <section style={{ ...card, padding: "18px 22px" }}>
-                  <div style={sectionLabel}>FORECAST · PORT-MIS</div>
-                  <h2 style={{ margin: "6px 0 4px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                    시간대별 혼잡도 (입항 신고 기준)
-                  </h2>
-                  <p style={{ margin: "0 0 12px", fontSize: 12, color: "#8a97b3" }}>
-                    Port-MIS 입항 신고(미래 예정 포함) 시간대별 밀도. 최근 6시간 ~ 향후 18시간.
-                  </p>
-                  {congestion && <CongestionChart forecast={congestion} />}
-                </section>
-              </div>
-
-              {/* 현재 정박 선박 (Port-MIS 공식·전수) — 주 현황 */}
-              <section style={{ ...card, padding: "18px 22px" }}>
-                <div style={sectionLabel}>AT BERTH · PORT-MIS</div>
-                <h2 style={{ margin: "6px 0 4px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                  현재 정박 선박 (접안 · 묘박)
-                </h2>
-                <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#8a97b3" }}>
-                  해양수산부 Port-MIS 기준 지금 부산항에 있는 선박 — 부두 접안·박지 묘박을 구분해 표시. 신항 포함, 선석·출발지·톤수.
-                </p>
-                <PortCallList calls={portCalls} />
-              </section>
-
-              {/* 선박 목록 (AIS 실시간 위치 기반) — 지도 마커와 동일한 subset */}
-              <section style={{ ...card, padding: "18px 22px" }}>
-                <div style={sectionLabel}>FLEET · AIS</div>
-                <h2 style={{ margin: "6px 0 4px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                  실시간 위치 선박 (AIS)
-                </h2>
-                <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#8a97b3" }}>
-                  지도에 표시되는, 위치(위경도)가 잡히는 선박입니다. 부산항 전체 현황은 위 Port-MIS 목록이 기준입니다.
-                </p>
-                <ShipList ships={ships} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} />
-              </section>
-            </div>
-          </>
-        )}
-      </main>
-
-      {/* AI 어드바이저 — 화면 하단 고정 채팅 위젯 */}
+      {/* AI 어드바이저 FAB */}
       <AdvisorPanel />
     </div>
   );

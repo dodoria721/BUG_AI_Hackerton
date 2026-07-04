@@ -110,6 +110,7 @@ export default function ShipMap({ ships, selectedMmsi, onSelect, portCalls = [] 
     <MapContainer
       center={[BUSAN_PORT.center.lat, BUSAN_PORT.center.lon]}
       zoom={11}
+      zoomControl={false}
       className="h-full w-full"
     >
       <TileLayer attribution={TILES.attribution} url={TILES.url} />
