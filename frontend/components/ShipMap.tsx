@@ -70,6 +70,40 @@ interface ShipMapProps {
   portCalls?: PortCall[]; // Port-MIS 정박선 — 부두별로 집계해 지도에 표시
 }
 
+// 지도 배경 타일 — 우선순위: (1) 직접 지정한 타일 URL, (2) VWorld 키, (3) OSM 기본.
+// 타일은 브라우저가 직접 받으므로 키가 든 URL도 NEXT_PUBLIC_ 으로 노출된다(타일 서비스의 정상 동작).
+//   NEXT_PUBLIC_VWORLD_KEY   — vworld.kr 발급 키
+//   NEXT_PUBLIC_VWORLD_LAYER — Satellite(위성,기본) | Base(일반) | gray | midnight(야간) | Hybrid
+const VWORLD_KEY = process.env.NEXT_PUBLIC_VWORLD_KEY;
+const VWORLD_LAYER = process.env.NEXT_PUBLIC_VWORLD_LAYER || "Satellite";
+
+function resolveTiles(): { url: string; attribution: string; hybrid?: string } {
+  if (process.env.NEXT_PUBLIC_MAP_TILE_URL) {
+    return {
+      url: process.env.NEXT_PUBLIC_MAP_TILE_URL,
+      attribution: process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || "",
+    };
+  }
+  if (VWORLD_KEY) {
+    const ext = VWORLD_LAYER === "Satellite" ? "jpeg" : "png";
+    return {
+      url: `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/${VWORLD_LAYER}/{z}/{y}/{x}.${ext}`,
+      attribution: '&copy; <a href="https://www.vworld.kr">VWorld</a> · 국토교통부',
+      // 위성 지도엔 지명·도로 라벨이 없어, Hybrid 레이어를 위에 겹쳐 라벨을 표시한다.
+      hybrid:
+        VWORLD_LAYER === "Satellite"
+          ? `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/Hybrid/{z}/{y}/{x}.png`
+          : undefined,
+    };
+  }
+  return {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  };
+}
+
+const TILES = resolveTiles();
+
 export default function ShipMap({ ships, selectedMmsi, onSelect, currentLevel, portCalls = [] }: ShipMapProps) {
   const zoneColor = congestionColor(currentLevel);
 
@@ -89,10 +123,9 @@ export default function ShipMap({ ships, selectedMmsi, onSelect, currentLevel, p
       zoom={11}
       className="h-full w-full"
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <TileLayer attribution={TILES.attribution} url={TILES.url} />
+      {/* 위성 배경일 때 지명·도로 라벨 오버레이 */}
+      {TILES.hybrid && <TileLayer url={TILES.hybrid} />}
 
       {/* 항만 구역: 현재 혼잡도에 따라 반투명 오버레이(초록→노랑→빨강) */}
       {BUSAN_PORT.zones.map((zone) => (
