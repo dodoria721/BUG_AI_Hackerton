@@ -1,7 +1,7 @@
 "use client";
 
 import L from "leaflet";
-import { Circle, MapContainer, Marker, Popup, TileLayer, Tooltip } from "react-leaflet";
+import { MapContainer, Marker, Popup, TileLayer, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import type { BerthArea, PortCall, Ship } from "@/backend/ports/port-types";
 import { BUSAN_PORT } from "@/backend/ports/seed-port";
@@ -17,14 +17,6 @@ const STATUS_LABEL: Record<Ship["status"], string> = {
   anchored: "묘박 중",
   moored: "접안 중",
 };
-
-// 혼잡도(0~1)를 seed-port의 임계값에 맞춰 초록→노랑→빨강으로 매핑한다.
-function congestionColor(level: number): string {
-  const { low, medium } = BUSAN_PORT.congestionThresholds;
-  if (level <= low) return "#4ade80"; // 원활
-  if (level <= medium) return "#facc15"; // 보통
-  return "#f87171"; // 혼잡
-}
 
 // cog(침로)에 따라 회전하는 삼각형(화살촉) 아이콘을 divIcon으로 만든다.
 // 기본 Marker 이미지 대신 인라인 SVG를 쓰면 Next.js 번들러의 아이콘 경로 문제를 피할 수 있다.
@@ -66,7 +58,6 @@ interface ShipMapProps {
   ships: Ship[];
   selectedMmsi: string | null;
   onSelect: (mmsi: string) => void;
-  currentLevel: number; // 혼잡도 0~1 — 구역 오버레이 색상에 사용
   portCalls?: PortCall[]; // Port-MIS 정박선 — 부두별로 집계해 지도에 표시
 }
 
@@ -104,9 +95,7 @@ function resolveTiles(): { url: string; attribution: string; hybrid?: string } {
 
 const TILES = resolveTiles();
 
-export default function ShipMap({ ships, selectedMmsi, onSelect, currentLevel, portCalls = [] }: ShipMapProps) {
-  const zoneColor = congestionColor(currentLevel);
-
+export default function ShipMap({ ships, selectedMmsi, onSelect, portCalls = [] }: ShipMapProps) {
   // 부두별 접안/묘박 척수 집계
   const areaStats = BUSAN_PORT.berthAreas
     .map((area) => {
@@ -121,23 +110,12 @@ export default function ShipMap({ ships, selectedMmsi, onSelect, currentLevel, p
     <MapContainer
       center={[BUSAN_PORT.center.lat, BUSAN_PORT.center.lon]}
       zoom={11}
+      zoomControl={false}
       className="h-full w-full"
     >
       <TileLayer attribution={TILES.attribution} url={TILES.url} />
       {/* 위성 배경일 때 지명·도로 라벨 오버레이 */}
       {TILES.hybrid && <TileLayer url={TILES.hybrid} />}
-
-      {/* 항만 구역: 현재 혼잡도에 따라 반투명 오버레이(초록→노랑→빨강) */}
-      {BUSAN_PORT.zones.map((zone) => (
-        <Circle
-          key={zone.id}
-          center={[zone.center.lat, zone.center.lon]}
-          radius={zone.radiusKm * 1000}
-          pathOptions={{ color: zoneColor, fillColor: zoneColor, fillOpacity: 0.12, weight: 1 }}
-        >
-          <Tooltip>{zone.name}</Tooltip>
-        </Circle>
-      ))}
 
       {/* 부두별 정박선 집계 마커 (Port-MIS 기반) */}
       {areaStats.map(({ area, berthed, anchored, total }) => (
