@@ -76,7 +76,9 @@ async function main() {
       if (d.etryndNm === "입항" && d.etryptDt) arrivalTimes.push(d.etryptDt);
     }
   }
-  const congestion = computePortCongestion(arrivalTimes, BUSAN_PORT);
+  const congestion = computePortCongestion(arrivalTimes, BUSAN_PORT, new Date(), {
+    currentInPortCount: callRows.length,
+  });
   const saved = await savePortCongestion(congestion);
   if (!saved.ok) console.error("[enrich-portmis] 혼잡도 저장 실패:", saved.error);
   else console.log(`[enrich-portmis] 혼잡도 저장 (현재 ${Math.round(congestion.currentLevel * 100)}%, ${congestion.forecast.length}구간)`);

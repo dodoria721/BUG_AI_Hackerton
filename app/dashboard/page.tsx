@@ -276,10 +276,10 @@ export default function DashboardPage() {
                 accent={congestionColor(level)}
                 hint={
                   level <= BUSAN_PORT.congestionThresholds.low
-                    ? "원활 · 입항 신고 기준"
+                    ? "원활 · 입항+정박 기준"
                     : level <= BUSAN_PORT.congestionThresholds.medium
-                      ? "보통 · 입항 신고 기준"
-                      : "혼잡 · 입항 신고 기준"
+                      ? "보통 · 입항+정박 기준"
+                      : "혼잡 · 입항+정박 기준"
                 }
               />
             </div>
@@ -321,10 +321,10 @@ export default function DashboardPage() {
                 <section style={{ ...card, padding: "18px 22px" }}>
                   <div style={sectionLabel}>FORECAST · PORT-MIS</div>
                   <h2 style={{ margin: "6px 0 4px", fontSize: 18, fontWeight: 800, letterSpacing: "-.02em" }}>
-                    시간대별 혼잡도 (입항 신고 기준)
+                    시간대별 혼잡도 (입항 + 현재 정박 기준)
                   </h2>
                   <p style={{ margin: "0 0 12px", fontSize: 12, color: "#8a97b3" }}>
-                    Port-MIS 입항 신고(미래 예정 포함) 시간대별 밀도. 최근 6시간 ~ 향후 18시간.
+                    Port-MIS 입항 신고 밀도에 현재 정박 선박 스냅샷을 함께 반영합니다. 최근 6시간 ~ 향후 18시간.
                   </p>
                   {congestion && <CongestionChart forecast={congestion} />}
                 </section>
