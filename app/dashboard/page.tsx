@@ -302,7 +302,6 @@ export default function DashboardPage() {
                     ships={ships}
                     selectedMmsi={selectedMmsi}
                     onSelect={setSelectedMmsi}
-                    currentLevel={level}
                     portCalls={portCalls}
                   />
                 </div>
