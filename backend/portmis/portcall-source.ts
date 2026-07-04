@@ -66,6 +66,7 @@ export async function fetchPortCalls(): Promise<PortCall[]> {
   const { data, error } = await db
     .from("port_calls")
     .select("*")
+    .lte("event_time", new Date().toISOString())
     .order("event_time", { ascending: false, nullsFirst: false });
   if (error) {
     console.error("[portcall-source] 조회 실패:", error.message);

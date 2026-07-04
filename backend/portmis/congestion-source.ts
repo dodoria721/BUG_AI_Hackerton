@@ -33,7 +33,10 @@ export async function savePortCongestion(forecast: CongestionForecast): Promise<
 }
 
 async function fetchCurrentInPortCount(db: NonNullable<ReturnType<typeof getSupabase>>): Promise<number> {
-  const { count, error } = await db.from("port_calls").select("vessel_name", { count: "exact", head: true });
+  const { count, error } = await db
+    .from("port_calls")
+    .select("vessel_name", { count: "exact", head: true })
+    .lte("event_time", new Date().toISOString());
   if (error) {
     console.error("[congestion-source] 현재 정박 선박 수 조회 실패:", error.message);
     return 0;
