@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import { BUSAN_PORT } from "../ports/seed-port";
-import { computePortCongestion, computePortCongestionBreakdown } from "./congestion";
+import { computePortCongestion, computePortCongestionBreakdown, inPortPressureFromBands } from "./congestion";
+
+// ── 재고 압력: 실측 분위수 매핑 ──
+const cap = BUSAN_PORT.portCallCapacity.portWide;
+assert.equal(inPortPressureFromBands(0, BUSAN_PORT), 0);
+assert.ok(Math.abs(inPortPressureFromBands(cap.p50, BUSAN_PORT) - 0.5) < 1e-9); // 평시 → 0.5
+assert.ok(Math.abs(inPortPressureFromBands(cap.p95, BUSAN_PORT) - 0.95) < 1e-9);
+assert.ok(Math.abs(inPortPressureFromBands(cap.p99, BUSAN_PORT) - 0.99) < 1e-9);
+assert.equal(inPortPressureFromBands(cap.max, BUSAN_PORT), 1);
+assert.equal(inPortPressureFromBands(cap.max + 100, BUSAN_PORT), 1); // 상한 클램프
+// 단조 증가
+assert.ok(inPortPressureFromBands(320, BUSAN_PORT) > inPortPressureFromBands(300, BUSAN_PORT));
+// 옛 방식(항상 ~0.96 붙박이) 대비: 평시(P50)는 0.5 부근이라 판별력이 산다
+assert.ok(inPortPressureFromBands(cap.p50, BUSAN_PORT) < 0.6);
 
 const empty = computePortCongestionBreakdown(0, 0, BUSAN_PORT);
 assert.equal(empty.level, 0);

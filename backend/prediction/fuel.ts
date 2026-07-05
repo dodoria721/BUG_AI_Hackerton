@@ -58,6 +58,17 @@ const SFC_G_PER_KWH: Record<FuelType, number> = {
   LNG: 166, // 열량 환산 기준(가스 t당 발열량이 높아 질량 소모율은 낮음)
 };
 
+// ── CO2 배출계수·연료가격·EU ETS (연료저감 금액·탄소비용 산출용) ──────────
+// Cf: IMO MEPC.364(79) 연료 1t당 CO2 [t]. VLSFO는 잔사유계라 실무상 HFO 계수(3.114) 적용.
+export const CO2_FACTOR_TON: Record<FuelType, number> = { MGO: 3.206, VLSFO: 3.114, LNG: 2.75 };
+// 대표 벙커 가격(USD/t) — 필요시 이 값만 교체.
+export const FUEL_PRICE_USD_PER_TON: Record<FuelType, number> = { MGO: 650, VLSFO: 500, LNG: 560 };
+// EU ETS: 연도별 EUA 가격(USD/tCO2)·적용율(phase-in). EU 역내 100%/역외 50% 과금.
+export const EU_ETS = {
+  euaPriceUsdPerTonCo2: { 2024: 65, 2025: 60, 2026: 90 } as Record<number, number>,
+  phaseInRate: { 2024: 0.4, 2025: 0.7, 2026: 1.0 } as Record<number, number>,
+};
+
 // ── 정박(hoteling) 출력 kW ─────────────────────────────────────────────
 // [보조엔진 + 보일러] 합산 근사치. size 티어는 총톤수(GT)로 나눈다(크기구간 근사).
 // ⚠️ IMO Table 17/18 정확값으로 교체 대상. 지금은 공개 문헌 통상범위 기반 근사.
@@ -100,4 +111,55 @@ export function hotelingFuelRate(vesselType: string | undefined, grossTonnage?: 
 /** 대기 시간(h)을 곱해 총 연료 소모량(t)을 구한다. 혼잡도→대기시간 환산값과 결합해 쓴다. */
 export function waitingFuelTon(vesselType: string | undefined, grossTonnage: number | undefined, waitHours: number): number {
   return hotelingFuelRate(vesselType, grossTonnage).ratePerHourTon * Math.max(0, waitHours);
+}
+
+// ── 항해(sea) 단계 연료 — 감속(slow steaming) 연료저감 계산용 ────────────
+// 주기관 소요출력은 선속의 세제곱에 비례한다(프로펠러 법칙): P ∝ v³.
+// 따라서 시간당 연료도 v³ 에 비례하고, 거리 D 를 가는 총 연료는 v² 에 비례한다:
+//   fuel_per_h ∝ v³ ,  fuel_trip = fuel_per_h × (D/v) ∝ v² × D
+// 즉 감속하면 총 항해연료가 제곱으로 줄어든다 — JIT(정시도착) 감속의 핵심.
+//
+// ⚠️ 아래 설계점(항해 중 주기관 [t/day] @ 설계선속)은 선종×크기 대표 근사치다.
+//    선박 명세서/시운전 성적서 값이 있으면 이 표만 교체하면 된다.
+interface SeaRef {
+  designSpeedKn: number; // 설계선속
+  designTonPerDay: Record<SizeTier, number>; // 설계선속에서 주기관 [t/day]
+}
+const SEA_REF: Record<VesselCategory, SeaRef> = {
+  container: { designSpeedKn: 21, designTonPerDay: { small: 50, medium: 110, large: 200 } },
+  bulk: { designSpeedKn: 14.5, designTonPerDay: { small: 22, medium: 40, large: 60 } },
+  tanker: { designSpeedKn: 15, designTonPerDay: { small: 28, medium: 55, large: 90 } },
+  general_cargo: { designSpeedKn: 13, designTonPerDay: { small: 14, medium: 26, large: 40 } },
+  lng: { designSpeedKn: 19.5, designTonPerDay: { small: 90, medium: 150, large: 210 } },
+  passenger: { designSpeedKn: 21, designTonPerDay: { small: 60, medium: 130, large: 240 } },
+  other: { designSpeedKn: 14, designTonPerDay: { small: 18, medium: 35, large: 55 } },
+};
+
+export interface SeaFuelEstimate {
+  category: VesselCategory;
+  fuelType: FuelType; // 항해 중이므로 VLSFO(LNG선은 LNG)
+  tonPerDay: number; // 해당 선속에서 주기관 [t/day]
+  tonPerHour: number;
+}
+
+/** 선종·총톤수·선속으로 "항해 중" 주기관 연료 소모율을 추정한다(v³ 법칙). */
+export function seaFuelRate(vesselType: string | undefined, grossTonnage: number | undefined, speedKn: number): SeaFuelEstimate {
+  const category = classifyVessel(vesselType);
+  const ref = SEA_REF[category];
+  const base = ref.designTonPerDay[sizeTier(grossTonnage)];
+  const ratio = Math.max(0, speedKn) / ref.designSpeedKn;
+  const tonPerDay = base * ratio ** 3; // P ∝ v³
+  return {
+    category,
+    fuelType: fuelTypeFor(category, "sea"),
+    tonPerDay,
+    tonPerHour: tonPerDay / 24,
+  };
+}
+
+/** 거리 D(해리)를 선속 v(kn)로 항해할 때의 총 주기관 연료(t). 시간 = D/v. */
+export function voyageFuelTon(vesselType: string | undefined, grossTonnage: number | undefined, distanceNm: number, speedKn: number): number {
+  const v = Math.max(0.1, speedKn);
+  const hours = distanceNm / v;
+  return seaFuelRate(vesselType, grossTonnage, v).tonPerHour * hours;
 }

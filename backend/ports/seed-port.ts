@@ -53,4 +53,31 @@ export const BUSAN_PORT: PortConfig = {
   // (Port-MIS 혼잡도) 부산항 전체(북항·신항·감천·다대포) 시간당 입항 신고가 이 건수면 포화(=1).
   // 실측 분포상 시간당 입항이 1~13건, 평시 5~7건이라 피크가 혼잡으로 뜨도록 12로 둔다.
   arrivalCapacityPerHour: 12,
+
+  // ── 동시 재항 척수 용량 + 대기시간 보정 ──
+  // 2019-01~2024-12 부산항만공사 입출항 집계 270,357건에서 구간겹침 스윕으로 산출.
+  // 검증: 컨테이너 동시재항 중앙 39척 ≈ 물리 컨테이너 선석 40석 (평시 선석 포화).
+  portCallCapacity: {
+    source: "부산항만공사 입출항 집계 2019-01~2024-12 (270,357건)",
+    portWide: { p50: 300, p95: 341, p99: 367, max: 426 },
+    container: { p50: 39, p95: 50, p99: 56, max: 75 },
+    containerBerths: 40, // 북항 17 + 신항 23 (busan-throughput 참조)
+    totalBerths: 40,
+    dwellMedianHours: 20.7,
+    // 혼잡도별 재항시간 실측: 컨테이너 16→20h, 탱커 20→27h. P75 꼬리로 대기 추정.
+    wait: {
+      container: { freeDwellHours: 16, congestedExtraHours: 8, onsetLevel: 0.7 },
+      tanker: { freeDwellHours: 20, congestedExtraHours: 14, onsetLevel: 0.65 },
+      default: { freeDwellHours: 18, congestedExtraHours: 10, onsetLevel: 0.7 },
+    },
+    // 시간대(0~23시) 평시=1.0 대비 계수 — 항 전체는 장기재항선이 많아 일중 변동 ±1%.
+    hourOfDayFactor: [
+      0.993, 0.997, 0.999, 1.0, 0.999, 0.997, 0.996, 1.003, 1.008, 1.01, 1.01, 1.009,
+      1.006, 1.005, 1.004, 1.002, 0.999, 0.996, 0.995, 0.995, 0.996, 0.994, 0.995, 0.992,
+    ],
+    // 월(1~12월) 계수 — 2월 성수기(+7%), 9~12월 한산(-5%).
+    monthFactor: [
+      1.026, 1.073, 1.038, 1.031, 1.043, 1.007, 0.986, 0.995, 0.947, 0.953, 0.953, 0.952,
+    ],
+  },
 };

@@ -59,6 +59,31 @@ function round2(value: number): number {
   return Number(value.toFixed(2));
 }
 
+// 재고 압력 — 현재 동시 재항 척수를 2019~2024 실측 분위수 밴드(P50/P95/P99)에 매핑한다.
+// 옛 방식 n/(n+arrivalCapacity)는 실측 규모(평시 ~300척)에서 값이 0.96에 붙박이라 판별력이
+// 없었다. 퍼센타일 매핑은 평시=0.5·P95=0.95·P99=0.99·역대피크=1.0 으로 전 구간 판별력을 준다.
+//
+// ⚠️ 전제: currentInPort 는 밴드와 "같은 경계"로 세야 한다(부산항계 안 전체 재항 선박).
+//    Port-MIS 스냅샷이 부분집합만 주면 앵커가 어긋나므로, 그때는 밴드를 재보정하거나 스케일한다.
+export function inPortPressureFromBands(currentInPort: number, config: PortConfig): number {
+  const n = Math.max(0, currentInPort);
+  const b = config.portCallCapacity.portWide;
+  const pts: [number, number][] = [
+    [0, 0],
+    [b.p50, 0.5],
+    [b.p95, 0.95],
+    [b.p99, 0.99],
+    [b.max, 1.0],
+  ];
+  if (n >= b.max) return 1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i];
+    const [x1, y1] = pts[i + 1];
+    if (n <= x1) return clamp01(y0 + ((y1 - y0) * (n - x0)) / Math.max(1, x1 - x0));
+  }
+  return 1;
+}
+
 export function computePortCongestionBreakdown(
   arrivals: number,
   currentInPortCount: number,
@@ -68,11 +93,11 @@ export function computePortCongestionBreakdown(
   const safeArrivals = Math.max(0, arrivals);
   const safeCurrentInPort = Math.max(0, currentInPortCount);
 
+  // 유량 압력(얼마나 몰려오나) — 기존 유지: 시간당 입항 신고 / 처리량(실측 보정된 12).
   const arrivalPressure = clamp01(safeArrivals / arrivalCapacity);
-  // 현재 정박 선박은 선석/터미널 배정을 보지 않고, Port-MIS 전수 스냅샷의 "재고 압력"으로만 반영한다.
-  // 별도 체류 용량 상수를 만들지 않기 위해 기존 Port-MIS 시간당 처리량을 기준으로 0~1에 수렴시킨다.
-  const inPortPressure =
-    safeCurrentInPort === 0 ? 0 : clamp01(safeCurrentInPort / (safeCurrentInPort + arrivalCapacity));
+  // 재고 압력(얼마나 찼나) — 실측 분위수 매핑으로 교체.
+  const inPortPressure = safeCurrentInPort === 0 ? 0 : inPortPressureFromBands(safeCurrentInPort, config);
+  // 두 축을 확률-OR 로 결합(둘 중 하나만 높아도 혼잡).
   const level = clamp01(1 - (1 - arrivalPressure) * (1 - inPortPressure));
 
   return {

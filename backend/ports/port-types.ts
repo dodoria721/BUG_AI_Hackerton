@@ -64,6 +64,37 @@ export interface CongestionThresholds {
   medium: number; // low < level <= medium: 보통, 초과 시 혼잡
 }
 
+// 동시 재항 척수 용량 — 2019~2024 부산항만공사 입출항 집계 27만건에서 오프라인 산출한
+// 실측 상수. "동시 재항" = 부산항계 안(접안+묘박+대기 전체). 혼잡도 정규화의 분모로 쓴다.
+// (P50=평시 중앙, P99=현실적 최대. 실시간 AIS/MIS도 같은 경계로 세야 분모/분자가 맞는다.)
+export interface CapacityBand {
+  p50: number; // 중앙(평시)
+  p95: number;
+  p99: number; // 권장 혼잡도 max(분모)
+  max: number; // 절대 상한(역대 최대)
+}
+
+// 혼잡도→대기시간 환산에 쓰는 재항시간(dwell) 앵커. 실측 회귀 결과:
+// 혼잡도가 오를수록 재항시간이 늘어난다(컨테이너 16h→20h, 탱커 20h→27h; 포화 시 P75 꼬리 큼).
+export interface WaitCalibration {
+  freeDwellHours: number; // 한산할 때 재항시간(중앙)
+  congestedExtraHours: number; // 포화(혼잡도≈1)에서 추가되는 대기시간(P75 기준 실측)
+  onsetLevel: number; // 이 혼잡도 이하에선 유의미한 대기가 거의 없음
+}
+
+// 항만 처리능력(입출항 집계 기반) — seed-port.ts 가 채운다.
+export interface PortCallCapacity {
+  source: string; // 산출 근거(기간)
+  portWide: CapacityBand; // 전체 선박 동시 재항
+  container: CapacityBand; // 컨테이너선만
+  containerBerths: number; // 물리 컨테이너 선석 수(검증: container.p50 ≈ berths)
+  totalBerths: number; // 부산항 전체 컨테이너 선석(북항+신항)
+  dwellMedianHours: number; // 전체 재항시간 중앙값
+  wait: { container: WaitCalibration; tanker: WaitCalibration; default: WaitCalibration };
+  hourOfDayFactor: number[]; // [0..23] 평시=1.0 대비 계수
+  monthFactor: number[]; // [0..11] 평시=1.0 대비 계수
+}
+
 export interface PortConfig {
   name: string;
   center: LatLon;
@@ -74,6 +105,7 @@ export interface PortConfig {
   congestionThresholds: CongestionThresholds;
   shipsPerHourCapacity: number; // (AIS 혼잡도) 시간당 처리 가능 선박 수 — 정규화 기준
   arrivalCapacityPerHour: number; // (Port-MIS 혼잡도) 시간당 입항 신고 처리량 — 정규화 기준
+  portCallCapacity: PortCallCapacity; // 동시 재항 용량·대기 보정(입출항 집계 실측)
 }
 
 export interface CongestionPoint {

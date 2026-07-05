@@ -6,6 +6,7 @@ import type { CongestionForecast, PortCall, Ship } from "@/backend/ports/port-ty
 import { BUSAN_PORT } from "@/backend/ports/seed-port";
 import VesselPanel from "@/frontend/components/VesselPanel";
 import AdvisorPanel from "@/frontend/components/AdvisorPanel";
+import SpeedAdvisoryCard from "@/frontend/components/SpeedAdvisoryCard";
 import LeftRail from "@/frontend/components/LeftRail";
 import { BASEMAPS, BASEMAP_STORAGE, initialBasemapId, type Basemap } from "@/frontend/components/basemaps";
 import { RIGHT_LEGEND_RIGHT } from "@/frontend/components/layout";
@@ -39,10 +40,11 @@ function Metric({ label, value, unit, accent }: { label: string; value: string; 
 }
 
 // "표시 항목" 카테고리 — 사이트 안에서 화면 오버레이를 켜고 끈다.
-type LayerKey = "vessels" | "congestion" | "legend";
+type LayerKey = "vessels" | "congestion" | "advisory" | "legend";
 const LAYER_ITEMS: { key: LayerKey; label: string; icon: string }[] = [
   { key: "vessels", label: "선박 패널", icon: "🚢" },
   { key: "congestion", label: "혼잡도", icon: "📊" },
+  { key: "advisory", label: "감속 권고", icon: "⚓" },
   { key: "legend", label: "범례", icon: "🎨" },
 ];
 const LAYERS_STORAGE = "portiq.layers";
@@ -53,7 +55,7 @@ function saveLocal(key: string, value: string) {
 }
 
 function initialLayers(): Record<LayerKey, boolean> {
-  const def: Record<LayerKey, boolean> = { vessels: true, congestion: true, legend: true };
+  const def: Record<LayerKey, boolean> = { vessels: true, congestion: true, advisory: true, legend: true };
   if (typeof window === "undefined") return def;
   try {
     const saved = JSON.parse(window.localStorage.getItem(LAYERS_STORAGE) || "null");
@@ -355,6 +357,9 @@ export default function DashboardPage() {
         ))}
       </div>
       )}
+
+      {/* 좌상단 감속 권고 카드 (혼잡도 기반 JIT 연료저감) */}
+      {layers.advisory && <SpeedAdvisoryCard ships={shownShips} level={level} />}
 
       {/* 우측 선박 패널 */}
       {layers.vessels && <VesselPanel calls={portCalls} selectedKey={selectedVessel} onSelect={setSelectedVessel} />}
