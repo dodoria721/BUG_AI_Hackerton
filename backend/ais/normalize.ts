@@ -9,6 +9,7 @@ export interface StaticInfo {
   name?: string;
   callSign?: string;
   destination?: string;
+  imo?: string;
 }
 
 // ITU-R M.1371 항행 상태 코드를 플랫폼이 쓰는 3종 상태로 단순화한다.
@@ -47,5 +48,6 @@ export function positionReportToShip(
     eta,
     status,
     ...(staticInfo?.callSign ? { callSign: staticInfo.callSign.trim() } : {}),
+    ...(staticInfo?.imo ? { imo: staticInfo.imo } : {}),
   };
 }

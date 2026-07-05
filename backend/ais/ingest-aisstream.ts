@@ -5,12 +5,11 @@
 // 조회(backend/ais/ship-source.ts, /api/ships)를 분리하면 조회 쪽은 실 AIS든 목업이든
 // DB만 보면 되고 수정할 필요가 없다.
 //
-// 부산항 필터링은 두 단계다:
-//   1) 지리적 필터(주) — seed-port.ts의 부산항 중심 좌표 기준 bounding box로 구독 자체를
-//      제한한다. 이 범위 안의 배는 정의상 부산에 입항/정박/출항 중인 배다.
-//   2) 목적지 텍스트(부가) — ShipStaticData.Destination이 있는데 부산이 아니라고 명시된
-//      배(예: 근해를 그냥 지나가는 배)는 한 번 더 걸러낸다. 목적지가 아직 없으면(=판단
-//      불가) 지리적 필터만으로 통과시킨다.
+// 부산항 필터링은 지리적 필터(bounding box) 하나만 쓴다:
+//   seed-port.ts의 부산항 중심 좌표 기준 bounding box로 구독 자체를 제한한다. 이 범위 안의
+//   배는 정의상 부산에 입항/정박/출항 중인 배다.
+//   (목적지 텍스트 보조 필터는 제거했다 — AIS엔 출발지 필드가 없어 목적지 하나만으론 '부산발'과
+//    '단순 통과'를 구분할 수 없고, 목적지만으로 제외하면 부산에서 막 출항한 배까지 놓친다.)
 //
 // 실행: npm run ingest:ais
 // (Node 20.6+ 필요 — package.json의 --env-file 로 .env.local을 읽는다)
@@ -18,10 +17,10 @@
 import { getSupabase } from "../db/supabase";
 import { BUSAN_PORT } from "../ports/seed-port";
 import type { Ship } from "../ports/port-types";
-import { boundingBoxAround, isBusanDestination } from "./busan-filter";
+import { boundingBoxAround } from "./busan-filter";
 import { subscribeAisStream } from "./aisstream-client";
 import { positionReportToShip, type StaticInfo } from "./normalize";
-import { shipToRow } from "./ship-source";
+import { shipToPositionRow, staticInfoToRow } from "./ship-source";
 
 const API_KEY = process.env.AISSTREAM_API_KEY;
 const FLUSH_INTERVAL_MS = 10_000;
@@ -41,10 +40,14 @@ if (!supabase) {
 process.on("unhandledRejection", (err) => console.error("[ingest-aisstream] unhandledRejection:", err));
 process.on("uncaughtException", (err) => console.error("[ingest-aisstream] uncaughtException:", err));
 
-// MMSI별 최신 ShipStaticData(이름·목적지) 캐시 — PositionReport에는 목적지가 안 실려온다.
+// MMSI별 최신 ShipStaticData(이름·호출부호·IMO·목적지) 캐시 — 세션 내내 유지한다.
+// PositionReport에는 이 값들이 안 실려오므로, 여기 모아뒀다가 정적 flush로 DB에 반영한다.
 const staticInfoByMmsi = new Map<string, StaticInfo>();
-// 다음 flush까지 모아둘 변경분. MMSI당 최신 값만 남기면 되므로 Map이면 충분하다.
+// 다음 위치 flush까지 모아둘 위치 변경분. MMSI당 최신 값만 남기면 되므로 Map이면 충분하다.
 const pendingShips = new Map<string, Ship>();
+// 아직 DB 행에 반영 못 한 정적데이터 MMSI. 정적 flush에서 update가 성공(행 존재)하면 제거하고,
+// 행이 아직 없으면(0건) 남겨서 다음 flush에 재시도한다.
+const pendingStatic = new Set<string>();
 
 const boundingBox = boundingBoxAround(BUSAN_PORT);
 console.log(`[ingest-aisstream] ${BUSAN_PORT.name} bounding box 구독: ${JSON.stringify(boundingBox)}`);
@@ -62,35 +65,73 @@ subscribeAisStream({
 
     if (msg.Message.ShipStaticData) {
       const s = msg.Message.ShipStaticData;
-      staticInfoByMmsi.set(mmsi, { name: s.Name, callSign: s.CallSign, destination: s.Destination });
+      // IMO 0 은 "미제공"을 뜻하므로 값으로 취급하지 않는다.
+      const imo = s.ImoNumber && s.ImoNumber > 0 ? String(s.ImoNumber) : undefined;
+      staticInfoByMmsi.set(mmsi, { name: s.Name, callSign: s.CallSign, destination: s.Destination, imo });
+      pendingStatic.add(mmsi); // 다음 정적 flush에서 이 배의 식별 필드를 DB에 반영
       return;
     }
 
     if (msg.Message.PositionReport) {
       const staticInfo = staticInfoByMmsi.get(mmsi);
 
-      // 목적지가 방송됐는데 부산이 아니면 제외 — 없으면(판단 불가) bbox 필터만으로 통과.
-      if (staticInfo?.destination && !isBusanDestination(staticInfo.destination)) return;
-
+      // 부산 인근 bbox 안이면 유지한다. AIS엔 출발지(origin) 필드가 없어 목적지 하나만으론
+      // '부산발(목적지=비부산)'과 '단순 통과'를 구분할 수 없다 — 목적지·출발지 둘 다 확인해야
+      // 통과 선박이라 단정할 수 있는데 출발지가 없으므로, 목적지 단독으로는 제외하지 않는다.
       const ship = positionReportToShip(mmsi, msg.MetaData.ShipName, msg.Message.PositionReport, staticInfo);
       pendingShips.set(mmsi, ship);
     }
   },
 });
 
-async function flush() {
+// 위치 flush — 위치/상태 컬럼만 upsert한다(식별 필드는 건드리지 않음).
+async function flushPositions() {
   if (pendingShips.size === 0) return;
-  const rows = [...pendingShips.values()].map(shipToRow);
+  const rows = [...pendingShips.values()].map(shipToPositionRow);
   pendingShips.clear();
 
   try {
     const { error } = await supabase!.from("ships").upsert(rows, { onConflict: "mmsi" });
-    if (error) console.error("[ingest-aisstream] upsert 실패:", error.message);
-    else console.log(`[ingest-aisstream] ${rows.length}척 갱신`);
+    if (error) console.error("[ingest-aisstream] 위치 upsert 실패:", error.message);
+    else console.log(`[ingest-aisstream] 위치 ${rows.length}척 갱신`);
   } catch (err) {
     // 네트워크 예외 등으로 upsert 자체가 throw해도 setInterval 루프는 계속 돌아야 한다.
-    console.error("[ingest-aisstream] upsert 예외:", err);
+    console.error("[ingest-aisstream] 위치 upsert 예외:", err);
   }
 }
 
-setInterval(flush, FLUSH_INTERVAL_MS);
+// 정적 flush — 식별 필드(name/call_sign/imo)를 mmsi별 update로만 반영한다.
+// upsert가 아니라 update라 위치보고가 만든 기존 행에만 붙고, 위치 컬럼을 절대 건드리지 않는다.
+// 행이 아직 없으면(신규 mmsi가 정적을 먼저 보냄) 0건 → pendingStatic에 남겨 다음 flush에 재시도.
+async function flushStatic() {
+  if (pendingStatic.size === 0) return;
+  let updated = 0;
+  for (const mmsi of [...pendingStatic]) {
+    const info = staticInfoByMmsi.get(mmsi);
+    const row = info ? staticInfoToRow(info) : {};
+    if (Object.keys(row).length === 0) {
+      pendingStatic.delete(mmsi); // 반영할 값이 없으면 재시도할 이유도 없다
+      continue;
+    }
+    try {
+      const { data, error } = await supabase!.from("ships").update(row).eq("mmsi", mmsi).select("mmsi");
+      if (error) {
+        console.error("[ingest-aisstream] 정적 update 실패:", mmsi, error.message);
+        continue; // 다음 flush에 재시도 (pendingStatic 유지)
+      }
+      if (data && data.length > 0) {
+        pendingStatic.delete(mmsi); // 행에 반영됨
+        updated++;
+      }
+      // data.length === 0 → 아직 위치 행이 없음 → pendingStatic 유지(재시도)
+    } catch (err) {
+      console.error("[ingest-aisstream] 정적 update 예외:", mmsi, err);
+    }
+  }
+  if (updated > 0) console.log(`[ingest-aisstream] 식별정보 ${updated}척 반영 (대기 ${pendingStatic.size})`);
+}
+
+// 위치를 먼저 반영해 행을 만든 뒤, 정적 update가 그 행에 붙도록 순서대로 실행한다.
+setInterval(() => {
+  void flushPositions().then(flushStatic);
+}, FLUSH_INTERVAL_MS);

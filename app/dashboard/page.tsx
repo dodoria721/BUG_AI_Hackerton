@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type { CongestionForecast, PortCall, Ship } from "@/backend/ports/port-types";
 import { BUSAN_PORT } from "@/backend/ports/seed-port";
 import VesselPanel from "@/frontend/components/VesselPanel";
 import AdvisorPanel from "@/frontend/components/AdvisorPanel";
+import LeftRail from "@/frontend/components/LeftRail";
 import { BASEMAPS, BASEMAP_STORAGE, initialBasemapId, type Basemap } from "@/frontend/components/basemaps";
 import { RIGHT_LEGEND_RIGHT } from "@/frontend/components/layout";
+import { filterShipsMatchingPortMis } from "@/backend/portmis/match-position";
 
 // Leaflet은 window에 의존하므로 서버에서 렌더링하면 안 된다.
 const ShipMap = dynamic(() => import("@/frontend/components/ShipMap"), { ssr: false });
@@ -36,8 +37,6 @@ function Metric({ label, value, unit, accent }: { label: string; value: string; 
     </div>
   );
 }
-
-const RAIL_ICONS = ["🗺️", "🚢", "⚓", "📊", "⚙️"];
 
 // "표시 항목" 카테고리 — 사이트 안에서 화면 오버레이를 켜고 끈다.
 type LayerKey = "vessels" | "congestion" | "legend";
@@ -190,11 +189,15 @@ export default function DashboardPage() {
   const anchoredPm = portCalls.filter((c) => c.berthType === "묘박").length;
   const level = congestion?.currentLevel ?? 0;
 
+  // Port-MIS(공식 정박선)와 호출부호·선박명 유사도로 매칭되는 AIS 선박만 지도에 표시한다.
+  // → 오래된/무관한 유령 위치를 걸러내고 공식 기록에 있는 배의 위치만 남긴다.
+  const shownShips = useMemo(() => filterShipsMatchingPortMis(ships, portCalls), [ships, portCalls]);
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "#070c17", overflow: "hidden", fontFamily: "Pretendard, system-ui, sans-serif" }}>
       {/* 배경 지도 */}
       <div style={{ position: "absolute", inset: 0 }}>
-        <ShipMap ships={ships} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} portCalls={portCalls} basemapId={basemapId} />
+        <ShipMap ships={shownShips} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} portCalls={portCalls} basemapId={basemapId} />
       </div>
       {/* 다크 무드 틴트 (지도 클릭 방해 안 함) */}
       <div
@@ -208,62 +211,7 @@ export default function DashboardPage() {
       />
 
       {/* 좌측 아이콘 레일 */}
-      <div
-        style={{
-          position: "absolute",
-          top: 16,
-          left: 16,
-          bottom: 16,
-          width: 52,
-          zIndex: 500,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 6,
-          padding: "12px 0",
-          background: panel,
-          backdropFilter: "blur(14px)",
-          border,
-          borderRadius: 14,
-        }}
-      >
-        <Link
-          href="/"
-          title="홈"
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 9,
-            background: "linear-gradient(135deg,#2f6bff,#5b8cff)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 8,
-            textDecoration: "none",
-          }}
-        >
-          <div style={{ width: 12, height: 12, border: "2.5px solid #fff", borderRadius: "50%", borderRightColor: "transparent" }} />
-        </Link>
-        {RAIL_ICONS.map((ic, i) => (
-          <div
-            key={i}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 10,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 17,
-              color: muted,
-              background: i === 0 ? "rgba(56,189,248,.12)" : "transparent",
-              cursor: "pointer",
-            }}
-          >
-            {ic}
-          </div>
-        ))}
-      </div>
+      <LeftRail active="/dashboard" />
 
       {/* 우측 세로 툴바 — 지도 타입 / 표시 항목 카테고리 (레퍼런스 스타일, 왼쪽으로 펼침) */}
       <div
@@ -371,7 +319,7 @@ export default function DashboardPage() {
         <Metric label="정박" value={String(portCalls.length)} unit="척" />
         <Metric label="접안" value={String(berthed)} unit="척" accent="#34d399" />
         <Metric label="묘박" value={String(anchoredPm)} unit="척" accent="#fbbf24" />
-        <Metric label="AIS 위치" value={String(ships.length)} unit="척" accent="#38bdf8" />
+        <Metric label="AIS 위치" value={String(shownShips.length)} unit="척" accent="#38bdf8" />
         <div style={{ width: 1, height: 30, background: "rgba(255,255,255,.1)" }} />
         <Metric label="혼잡도" value={String(Math.round(level * 100))} unit="%" accent={congestionColor(level)} />
       </div>
