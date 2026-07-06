@@ -12,7 +12,7 @@ export const RAIL_ITEMS: { icon: string; label: string; href?: string }[] = [
   { icon: "🗺️", label: "관제 지도", href: "/dashboard" },
   { icon: "🚢", label: "선박 모니터링", href: "/vessel" },
   { icon: "⚓", label: "선석 대기" },
-  { icon: "📊", label: "통계" },
+  { icon: "📊", label: "혼잡도 통계", href: "/congestion" },
   { icon: "⚙️", label: "설정" },
 ];
 

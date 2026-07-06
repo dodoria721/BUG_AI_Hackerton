@@ -54,6 +54,47 @@ export const BUSAN_PORT: PortConfig = {
   // 실측 분포상 시간당 입항이 1~13건, 평시 5~7건이라 피크가 혼잡으로 뜨도록 12로 둔다.
   arrivalCapacityPerHour: 12,
 
+  // (해수부 연안AIS 통계 혼잡도) 32km bbox(mockAreaRadiusKm) 안 시간당 AIS 척수를 level=1로 볼 기준.
+  // 2024 실측(gicoms WFS small_ship_stats_view)상 이 구역 시간당 척수가 ~1400~1660이라, 피크가
+  // 혼잡(≈0.8)으로 뜨도록 2000으로 둔다. bbox 크기에 종속된 값이라 반경이 바뀌면 재보정 필요.
+  aisStatsHourlyCapacity: 2000,
+
+  // 지역별 혼잡도 분할.
+  //  - 시간대별 곡선: AIS 통계를 center±radiusKm bbox로 조회 → aisHourlyCapacity 로 정규화.
+  //  - 입출항 수치: Port-MIS berthAreaId 집계.
+  // aisHourlyCapacity 는 2024 실측(소해구도 시간당 척수) 기반 근사: 북항·감천 셀 피크 ~875,
+  // 신항 셀 ~167. ⚠️ 북항·감천은 같은 AIS 셀이라 aisSeparable=false(곡선 유사).
+  congestionRegions: [
+    {
+      id: "busan",
+      name: "부산(북항)",
+      center: { lat: 35.09, lon: 129.07 },
+      radiusKm: 6,
+      aisHourlyCapacity: 1100,
+      aisSeparable: false,
+      berthAreaIds: ["bukhang", "sinseondae", "gamman", "uam", "namhang", "yeongdo", "yongho", "anchorage"],
+      isDefault: true,
+    },
+    {
+      id: "gamcheon",
+      name: "감천항",
+      center: { lat: 35.078, lon: 129.01 },
+      radiusKm: 4,
+      aisHourlyCapacity: 1100,
+      aisSeparable: false,
+      berthAreaIds: ["gamcheon", "dadaepo"],
+    },
+    {
+      id: "sinhang",
+      name: "부산신항",
+      center: { lat: 35.081, lon: 128.79 },
+      radiusKm: 8,
+      aisHourlyCapacity: 250,
+      aisSeparable: true,
+      berthAreaIds: ["sinhang"],
+    },
+  ],
+
   // ── 동시 재항 척수 용량 + 대기시간 보정 ──
   // 2019-01~2024-12 부산항만공사 입출항 집계 270,357건에서 구간겹침 스윕으로 산출.
   // 검증: 컨테이너 동시재항 중앙 39척 ≈ 물리 컨테이너 선석 40석 (평시 선석 포화).

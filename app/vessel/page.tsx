@@ -21,6 +21,8 @@ import {
 } from "@/backend/vessel/build-view";
 import { DEMO_ENGINE, DEMO_TYPHOON, CII_GRADE_BANDS, ciiCurveBySpeed } from "@/backend/vessel/demo-telemetry";
 import { computeCiiStatus, CII_GRADE_COLOR } from "@/backend/prediction/cii";
+import { haversineDistanceKm } from "@/backend/prediction/eta";
+import { recommendSpeed } from "@/backend/prediction/speed-advisory";
 
 const muted = "#8aa0c8";
 const panelBg = "rgba(11,18,34,0.82)";
@@ -162,6 +164,18 @@ export default function VesselPage() {
   const level = congestion?.currentLevel ?? 0;
   const pos = view?.position ? posText(view.position.lat, view.position.lon) : null;
   const bf = wxPoint?.windSpeed != null ? beaufortFromWindMs(wxPoint.windSpeed) : null;
+
+  // 감속 권고(JIT) — 항해 중 + 위치 있는 접근 선박에만. Port-MIS 실제 선종으로 정밀 계산.
+  const advisory = (() => {
+    if (!view || view.status !== "underway" || !view.position || view.speedKn == null || view.speedKn < 1) return null;
+    const distanceNm = haversineDistanceKm(view.position, BUSAN_PORT.center) / 1.852;
+    if (distanceNm < 5 || distanceNm > 800) return null; // 너무 가깝거나(입항 임박) 먼(무의미) 경우 제외
+    const inPortEquiv = level * BUSAN_PORT.portCallCapacity.portWide.p99; // 혼잡도 → 동시 재항 척수 환산
+    return recommendSpeed(
+      { vesselType: view.type ?? undefined, grossTonnage: view.grossTonnage ?? undefined, distanceNm, currentSpeedKn: view.speedKn, currentInPort: inPortEquiv },
+      BUSAN_PORT
+    );
+  })();
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#070c17", overflow: "hidden", fontFamily: "Pretendard, system-ui, sans-serif", color: text }}>
@@ -407,6 +421,54 @@ export default function VesselPage() {
                   <div style={{ fontSize: 9.5, color: muted, marginTop: 1 }}>🕒 {p.timeUtc} (UTC)</div>
                 </div>
               ))}
+            </div>
+          </Panel>
+
+          {/* 감속 권고 (JIT 정시도착) — 이 선박 전용, Port-MIS 실제 선종 반영 */}
+          <Panel
+            title="감속 권고 · JIT 정시도착"
+            style={{ gridColumn: "span 4" }}
+            badge={<span style={{ fontSize: 9, fontWeight: 800, color: "#34d399", background: "rgba(52,211,153,.12)", padding: "3px 8px", borderRadius: 20 }}>연료·CO₂ 저감</span>}
+          >
+            {advisory ? (
+              advisory.savings.fuelTon > 0 ? (
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                  {/* 권고 요약 */}
+                  <div style={{ flex: "1 1 280px", background: "linear-gradient(135deg,#2f6bff,#5b8cff)", borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, opacity: 0.9 }}>권고 감속 속도</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.1 }}>
+                      {view?.speedKn?.toFixed(0)} → {advisory.recommendedSpeedKn}
+                      <span style={{ fontSize: 13, fontWeight: 700, opacity: 0.85, marginLeft: 4 }}>kn</span>
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.92, marginTop: 4 }}>
+                      도착을 {advisory.etaDelayHours}h 늦춰 묘박 대기 {advisory.waitHoursIfFullSpeed}h를 항해로 흡수
+                    </div>
+                  </div>
+                  {/* 절감·비교 */}
+                  <div style={{ flex: "2 1 420px", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, alignContent: "center" }}>
+                    <Cell label="연료 절감" value={advisory.savings.fuelTon.toFixed(1)} unit="t" accent="#38bdf8" />
+                    <Cell label="CO₂ 감축" value={advisory.savings.co2Ton.toFixed(1)} unit="t" accent="#34d399" />
+                    <Cell label="연료비 절감" value={`$${advisory.savings.fuelCostUsd.toLocaleString()}`} accent="#a78bfa" />
+                    <Cell label="혼잡도" value={Math.round(level * 100)} unit="%" accent={congestionColor(level)} />
+                    <Cell label="전속안 총연료" value={advisory.baseline.totalTon.toFixed(1)} unit="t" />
+                    <Cell label="JIT안 총연료" value={advisory.jit.totalTon.toFixed(1)} unit="t" accent="#34d399" />
+                    <Cell label="전속 시 대기" value={advisory.waitHoursIfFullSpeed} unit="h" />
+                    <Cell label="ETA 지연" value={advisory.etaDelayHours} unit="h" />
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 11.5, color: muted, padding: "16px 4px", lineHeight: 1.6 }}>
+                  현재 항만이 원활해 감속 이득이 없습니다 — 현 속력 {view?.speedKn?.toFixed(1)}kn 유지 권고. 혼잡도가 오르면 최적 감속 속도와 절감량을 계산합니다.
+                </div>
+              )
+            ) : (
+              <div style={{ fontSize: 11.5, color: muted, padding: "16px 4px", lineHeight: 1.6 }}>
+                JIT 감속 권고는 <b style={{ color: "#c7d3ea" }}>항해 중 접근 선박</b>에만 적용됩니다.
+                {view ? ` (현재 상태: ${STATUS_LABEL[view.status]}${!view.position ? " · AIS 위치 없음" : ""})` : ""}
+              </div>
+            )}
+            <div style={{ fontSize: 9, color: muted, marginTop: 10 }}>
+              2019~2024 부산항 입출항 실측(대기시간) · 선종 <b style={{ color: "#c7d3ea" }}>{view?.type ?? DASH}</b> 기준 · 전속 후 묘박대기 대비 (v³ 감속 법칙)
             </div>
           </Panel>
         </div>

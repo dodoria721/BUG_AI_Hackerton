@@ -4,7 +4,8 @@
 // 항내에 있는 배로 본다. 입항만 있고 출항이 없으면 당연히 정박 중, 입항·출항 시각이 같으면
 // (당일 입출항) 이미 떠난 것으로 본다.
 
-import type { BerthType, PortCall } from "../ports/port-types";
+import type { BerthType, PortCall, PortConfig } from "../ports/port-types";
+import { resolveBerthArea } from "./berth-areas";
 import type { PortMisDetail, PortMisItem } from "./types";
 
 // 시설명으로 접안/묘박을 판정한다. "박지/묘지/정박지"는 닻을 내리는 대기 지점(묘박),
@@ -60,6 +61,49 @@ export function mergeByVessel(items: PortMisItem[]): PortMisItem[] {
     }
   }
   return [...map.values()];
+}
+
+export interface BerthActivity {
+  arrivals: number;
+  departures: number;
+}
+
+// 최근 windowHours 시간 내 입·출항 신고를 부두(berthArea)별로 센다. port_calls 스냅샷은
+// "현재 정박 중" 선박만 담아 출항 건이 아예 빠지므로, 입·출항 건수는 이 집계로만 얻는다.
+// items는 mergeByVessel을 거친 것이어야 한다 — 하루 단위 조회로 같은 신고가 입항일 item과
+// 출항일 item에 중복 유입되므로, 선박 안에서 (이벤트|시각)으로 dedup한 뒤 센다.
+// 부두 미매칭 신고는 '' 키에 담는다(호출부에서 기본 지역으로 배정).
+export function countRecentActivity(
+  items: PortMisItem[],
+  config: PortConfig,
+  now: Date = new Date(),
+  windowHours = 24
+): Map<string, BerthActivity> {
+  const nowMs = now.getTime();
+  const fromMs = nowMs - windowHours * 60 * 60 * 1000;
+  const acc = new Map<string, BerthActivity>();
+
+  for (const item of items) {
+    const seen = new Set<string>();
+    for (const d of item.details) {
+      const isArrival = d.etryndNm === "입항";
+      const isDeparture = d.etryndNm === "출항";
+      const t = isArrival ? d.etryptDt : isDeparture ? d.tkoffDt : undefined;
+      if (!t) continue;
+      const ms = timeOf(t);
+      if (!Number.isFinite(ms) || ms < fromMs || ms > nowMs) continue;
+      const dedupKey = `${d.etryndNm}|${t}`;
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+
+      const areaId = resolveBerthArea(d.laidupFcltyNm, config)?.id ?? "";
+      const a = acc.get(areaId) ?? { arrivals: 0, departures: 0 };
+      if (isArrival) a.arrivals++;
+      else a.departures++;
+      acc.set(areaId, a);
+    }
+  }
+  return acc;
 }
 
 /** 정박 중인 선박을 PortCall로 변환한다. 대표 detail은 입항 detail(현재 정박 선석·입항시각). */

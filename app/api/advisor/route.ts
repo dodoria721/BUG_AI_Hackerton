@@ -1,8 +1,7 @@
 import { generateText } from "ai";
 import { advisorModel } from "@/backend/models";
 import { fetchShips } from "@/backend/ais/ship-source";
-import { BUSAN_PORT } from "@/backend/ports/seed-port";
-import { computeCongestionForecast } from "@/backend/prediction/congestion";
+import { resolveCongestion } from "@/backend/congestion/resolve-congestion";
 import { buildAdvisorPrompt } from "@/backend/advisor/prompt";
 import { parseAdvisorResult } from "@/backend/advisor/parse";
 
@@ -26,8 +25,8 @@ export async function POST(req: Request) {
       // 본문 없음 — 일반 운영 권고로 처리
     }
 
-    const ships = await fetchShips();
-    const congestion = computeCongestionForecast(ships, BUSAN_PORT);
+    // 선박 목록(지도/프롬프트용)은 실시간 위치를 그대로 쓰되, 혼잡도는 통계 기반으로 계산한다.
+    const [ships, congestion] = await Promise.all([fetchShips(), resolveCongestion()]);
     const prompt = buildAdvisorPrompt(ships, congestion, userMessage);
 
     const { text } = await generateText({ model: advisorModel, prompt });

@@ -95,6 +95,36 @@ export interface PortCallCapacity {
   monthFactor: number[]; // [0..11] 평시=1.0 대비 계수
 }
 
+// 혼잡도를 나눠 볼 지역(항).
+// - 시간대별 혼잡도(곡선): 해수부 연안AIS 통계를 지역 bbox(center±radiusKm)로 조회해 계산.
+// - 입항/출항 수치·미래 예측: Port-MIS 입출항 신고를 berthAreaId 로 집계.
+// ⚠️ AIS 통계 격자(소해구도 ~10km)는 인접한 북항·감천을 한 셀로 묶어 분리 못 한다(신항만 분리).
+//    그래서 aisSeparable=false 인 지역은 AIS 곡선이 서로 유사하게 나올 수 있다.
+export interface CongestionRegion {
+  id: string;
+  name: string;
+  center: LatLon; // AIS 통계 조회용 지역 중심
+  radiusKm: number; // AIS 통계 조회용 bbox 반경
+  aisHourlyCapacity: number; // AIS 시간대별 척수 → 0~1 정규화 분모(지역 규모 기반 근사)
+  aisSeparable: boolean; // AIS 격자로 이 지역이 인접 지역과 분리되는지(신항 true, 북항·감천 false)
+  berthAreaIds: string[]; // Port-MIS 입출항을 이 지역으로 집계할 부두들
+  isDefault?: boolean; // 어느 지역에도 안 잡힌 신고를 담을 지역(정확히 하나만 true)
+}
+
+// 지역별 시간대별 혼잡도 + 입출항 요약(API 응답 단위).
+export interface RegionCongestionSeries {
+  id: string;
+  name: string;
+  currentLevel: number; // 0~1 (현재 시각 AIS 밀도)
+  forecast: CongestionPoint[]; // 시간대별 곡선 (현재=AIS, 미래=Port-MIS 예측)
+  arrivals: number; // 최근 activityWindowHours 시간 Port-MIS 입항 신고 수
+  departures: number; // 최근 activityWindowHours 시간 Port-MIS 출항 신고 수
+  activityWindowHours: number; // 입·출항 집계 창(시간) — UI 표기용
+  currentVessels: number; // 현재 재항 척수 = AIS 통계 현재 시각(KST) 해역 척수
+  aisSeparable: boolean; // AIS 격자 분리 가능 여부(UI 안내용)
+  source: string; // 곡선 근거
+}
+
 export interface PortConfig {
   name: string;
   center: LatLon;
@@ -105,6 +135,10 @@ export interface PortConfig {
   congestionThresholds: CongestionThresholds;
   shipsPerHourCapacity: number; // (AIS 혼잡도) 시간당 처리 가능 선박 수 — 정규화 기준
   arrivalCapacityPerHour: number; // (Port-MIS 혼잡도) 시간당 입항 신고 처리량 — 정규화 기준
+  // (해수부 연안AIS 통계 혼잡도) 부산 bbox(mockAreaRadiusKm) 안 시간당 AIS 척수를 level=1로 볼 포화 기준.
+  // Port-MIS(입출항, 수백 척)와 달리 해역 내 모든 AIS 송신선을 세므로 규모가 훨씬 크다(전용 앵커).
+  aisStatsHourlyCapacity: number;
+  congestionRegions: CongestionRegion[]; // 지역별 혼잡도 분할(부산/감천/신항 등)
   portCallCapacity: PortCallCapacity; // 동시 재항 용량·대기 보정(입출항 집계 실측)
 }
 
@@ -116,6 +150,7 @@ export interface CongestionPoint {
   arrivalCapacity?: number; // Port-MIS 시간당 입항 처리량 기준
   arrivalPressure?: number; // 입항 예정 선박 수 기반 압력
   inPortPressure?: number; // 현재 정박 선박 수 기반 압력
+  areaVesselCount?: number; // 해당 시간대 해역 격자 내 AIS 척수 합계 (해수부 연안AIS 통계 기반일 때)
 }
 
 export interface CongestionForecast {

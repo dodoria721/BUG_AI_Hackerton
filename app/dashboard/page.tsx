@@ -384,7 +384,17 @@ export default function DashboardPage() {
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em" }}>시간대별 혼잡도</span>
-            <span style={{ fontSize: 10.5, color: muted }}>Port-MIS 입항 신고 · 최근 6h~향후 18h</span>
+            <span style={{ fontSize: 10.5, color: muted }}>
+              {congestion.source === "ais+port-mis"
+                ? "현재 연안AIS 밀도 · 미래 Port-MIS 예측"
+                : congestion.source === "mof-ais-stats"
+                  ? "연안AIS 통계 밀도"
+                  : congestion.source === "port-mis"
+                    ? "Port-MIS 입항 신고 · 최근 6h~향후 18h"
+                    : congestion.source === "none"
+                      ? "데이터 없음"
+                      : "AIS 기반"}
+            </span>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 56 }}>
             {congestion.forecast.map((p, i) => {
@@ -393,7 +403,9 @@ export default function DashboardPage() {
               return (
                 <div
                   key={i}
-                  title={`${new Date(p.time).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} · 입항 ${p.arrivals ?? 0}건`}
+                  title={`${new Date(p.time).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} · ${
+                    p.areaVesselCount != null ? `해역 ${p.areaVesselCount}척` : `입항 ${p.arrivals ?? 0}건`
+                  }`}
                   style={{
                     flex: 1,
                     height: `${Math.max(4, p.level * 100)}%`,

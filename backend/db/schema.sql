@@ -56,6 +56,17 @@ create table if not exists public.port_calls (
   primary key (call_sign, vessel_name)
 );
 
+-- 최근 24시간 부두별 입·출항 신고 집계. port_calls는 "현재 정박 중" 선박 스냅샷이라
+-- 출항한 배가 아예 담기지 않으므로(event도 전부 "입항"), 입·출항 건수는
+-- run-enrich.ts가 이 테이블에 따로 저장하고 지역별 혼잡도 API가 읽는다.
+create table if not exists public.port_call_activity (
+  berth_area_id  text primary key,                     -- seed-port berthAreas.id ('' = 부두 미매칭)
+  arrivals       int not null default 0,               -- 최근 window_hours 시간 입항 신고 수
+  departures     int not null default 0,               -- 최근 window_hours 시간 출항 신고 수
+  window_hours   int not null default 24,
+  updated_at     timestamptz not null default now()
+);
+
 -- Port-MIS 기반 혼잡도 스냅샷 (시간대별 입항 신고 밀도). run-enrich.ts가 매 실행 시 교체.
 create table if not exists public.port_congestion (
   bucket_time  timestamptz primary key,               -- 시간대(정시)
