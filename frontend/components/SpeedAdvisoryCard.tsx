@@ -68,7 +68,7 @@ export default function SpeedAdvisoryCard({ level }: Props) {
         position: "absolute",
         top: 16,
         left: 84,
-        width: 360,
+        width: 370,
         zIndex: 500,
         padding: "14px 16px 12px",
         background: panel,
@@ -80,9 +80,7 @@ export default function SpeedAdvisoryCard({ level }: Props) {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: ".02em" }}>감속 권고 · JIT 정시도착</span>
-        </div>
+        <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: ".02em" }}>감속 권고 · JIT 정시도착</span>
         <span style={{ fontSize: 9.5, color: muted, fontWeight: 700, letterSpacing: ".06em" }}>연료·탄소</span>
       </div>
 
@@ -101,24 +99,11 @@ export default function SpeedAdvisoryCard({ level }: Props) {
 
       {hasSavings ? (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
-            {[
-              { label: "대기 감소", value: String(summary?.totalReducedWaitingMinutes ?? 0), unit: "분", accent: "#fbbf24" },
-              { label: "연료 절감", value: fuel.value, unit: fuel.unit, accent: "#38bdf8" },
-              { label: "CO2 감축", value: co2.value, unit: co2.unit, accent: "#34d399" },
-            ].map((s) => (
-              <div
-                key={s.label}
-                style={{ background: "rgba(255,255,255,.04)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}
-              >
-                <div style={{ fontSize: 17, fontWeight: 800, color: s.accent, lineHeight: 1.1 }}>
-                  {s.value}
-                  <span style={{ fontSize: 10, color: muted, marginLeft: 2 }}>{s.unit}</span>
-                </div>
-                <div style={{ fontSize: 9.5, color: muted, fontWeight: 700, marginTop: 2 }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
+          <SummaryStats
+            waitMinutes={summary?.totalReducedWaitingMinutes ?? 0}
+            fuel={fuel}
+            co2={co2}
+          />
 
           <div style={{ fontSize: 9.5, color: muted, fontWeight: 800, letterSpacing: ".06em", marginBottom: 5 }}>
             접근 선박 {summary?.candidateCount ?? 0}척 · 감속 권고
@@ -134,14 +119,120 @@ export default function SpeedAdvisoryCard({ level }: Props) {
           </div>
         </>
       ) : (
-        <div style={{ fontSize: 11.5, color: muted, padding: "6px 0 2px", lineHeight: 1.5 }}>
-          {loading
-            ? "Port-MIS 혼잡도와 AIS 선박 위치를 기준으로 JIT 감속 권고를 계산하고 있습니다."
-            : error
-              ? "감속 권고 데이터를 불러오지 못했습니다."
-              : "현재 또는 ETA 시간대 혼잡도가 낮거나, 접근 중인 선박이 감속 권고 조건을 만족하지 않습니다."}
+        <EmptyState loading={loading} error={error} data={data} />
+      )}
+    </div>
+  );
+}
+
+function SummaryStats({
+  waitMinutes,
+  fuel,
+  co2,
+}: {
+  waitMinutes: number;
+  fuel: { value: string; unit: string };
+  co2: { value: string; unit: string };
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
+      {[
+        { label: "대기 감소", value: String(waitMinutes), unit: "분", accent: "#fbbf24" },
+        { label: "연료 절감", value: fuel.value, unit: fuel.unit, accent: "#38bdf8" },
+        { label: "CO2 감축", value: co2.value, unit: co2.unit, accent: "#34d399" },
+      ].map((s) => (
+        <div
+          key={s.label}
+          style={{ background: "rgba(255,255,255,.04)", borderRadius: 10, padding: "8px 6px", textAlign: "center" }}
+        >
+          <div style={{ fontSize: 17, fontWeight: 800, color: s.accent, lineHeight: 1.1 }}>
+            {s.value}
+            <span style={{ fontSize: 10, color: muted, marginLeft: 2 }}>{s.unit}</span>
+          </div>
+          <div style={{ fontSize: 9.5, color: muted, fontWeight: 700, marginTop: 2 }}>{s.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({
+  loading,
+  error,
+  data,
+}: {
+  loading: boolean;
+  error: string | null;
+  data: EnergyDecisionResult | null;
+}) {
+  if (loading) {
+    return (
+      <div style={{ fontSize: 11.5, color: muted, padding: "6px 0 2px", lineHeight: 1.5 }}>
+        Port-MIS 혼잡도와 AIS 선박 위치를 기준으로 JIT 감속 권고를 계산하고 있습니다.
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ fontSize: 11.5, color: muted, padding: "6px 0 2px", lineHeight: 1.5 }}>
+        감속 권고 데이터를 불러오지 못했습니다.
+      </div>
+    );
+  }
+
+  const summary = data?.summary;
+  const freshness = data?.forecastFreshness;
+  const emptyReason = data?.emptyReason;
+
+  return (
+    <div style={{ fontSize: 11.5, color: muted, padding: "4px 0 2px", lineHeight: 1.5 }}>
+      <div style={{ color: "#e7ecf5", fontWeight: 800, marginBottom: 6 }}>
+        {emptyReason?.title ?? "현재 JIT 감속 권고 대상 선박이 없습니다."}
+      </div>
+      <div style={{ marginBottom: 8 }}>
+        {emptyReason?.description ??
+          "현재 또는 ETA 시간대 혼잡도가 낮거나, 접근 중인 선박이 감속 권고 조건을 만족하지 않습니다."}
+      </div>
+
+      {summary && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5, marginBottom: 8 }}>
+          <MiniMetric label="접근 후보" value={`${summary.candidateCount}척`} />
+          <MiniMetric label="ETA 매칭" value={`${summary.etaForecastMatchedCount}척`} />
+          <MiniMetric label="fallback" value={`${summary.currentLevelFallbackCount}척`} />
+          <MiniMetric label="낮은 혼잡" value={`${summary.lowCongestionSkippedCount}척`} />
         </div>
       )}
+
+      {freshness?.isStale && (
+        <div style={{ padding: "7px 8px", background: "rgba(251,191,36,.08)", borderRadius: 8, color: "#fbbf24" }}>
+          혼잡도 예측 데이터가 최신 선박 ETA 범위를 벗어나 currentLevel fallback 기준으로 계산 중입니다.
+          Port-MIS 데이터를 최신화하면 ETA 시간대 기반 권고가 활성화될 수 있습니다.
+        </div>
+      )}
+
+      {emptyReason?.suggestions?.length ? (
+        <div style={{ marginTop: 8 }}>
+          {emptyReason.suggestions.slice(0, 3).map((suggestion) => (
+            <div key={suggestion} style={{ marginTop: 3 }}>
+              · {suggestion}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div style={{ fontSize: 9, color: muted, marginTop: 8, lineHeight: 1.4 }}>
+        {data?.calculationNote ?? "연료 절감량과 CO2 감축량은 선박 크기, 속도, 혼잡도 기반 추정값입니다."}
+      </div>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ background: "rgba(255,255,255,.04)", borderRadius: 8, padding: "5px 7px" }}>
+      <div style={{ fontSize: 9.5, color: muted, fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "#e7ecf5", fontWeight: 800 }}>{value}</div>
     </div>
   );
 }

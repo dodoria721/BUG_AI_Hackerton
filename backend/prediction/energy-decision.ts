@@ -90,9 +90,38 @@ export interface EnergyDecision {
 export interface EnergyDecisionSummary {
   candidateCount: number;
   recommendedCount: number;
+  etaForecastMatchedCount: number;
+  currentLevelFallbackCount: number;
+  lowCongestionSkippedCount: number;
+  noWaitSkippedCount: number;
+  minSpeedSkippedCount: number;
+  speedNotReducedSkippedCount: number;
   totalReducedWaitingMinutes: number;
   totalEstimatedFuelSavedKg: number;
   totalEstimatedCo2ReducedKg: number;
+}
+
+export interface ForecastFreshness {
+  isStale: boolean;
+  forecastStart?: string;
+  forecastEnd?: string;
+  now: string;
+  matchedEtaBucketCount: number;
+  fallbackCount: number;
+  reason: string;
+}
+
+export type EmptyReasonCode =
+  | "NO_UNDERWAY_CANDIDATES"
+  | "STALE_FORECAST_LOW_FALLBACK_CONGESTION"
+  | "LOW_CONGESTION_OR_NO_WAIT"
+  | "NO_EFFECTIVE_SPEED_REDUCTION";
+
+export interface EmptyReason {
+  code: EmptyReasonCode;
+  title: string;
+  description: string;
+  suggestions: string[];
 }
 
 export interface EnergyDecisionResult {
@@ -101,8 +130,10 @@ export interface EnergyDecisionResult {
   basis: "jit-arrival-energy-decision";
   lastUpdated: string;
   dataSources: string[];
+  forecastFreshness: ForecastFreshness;
   decisions: EnergyDecision[];
   summary: EnergyDecisionSummary;
+  emptyReason?: EmptyReason;
   calculationNote: string;
 }
 
@@ -137,6 +168,51 @@ function findForecastBucket(forecast: CongestionPoint[], eta: Date): CongestionP
     const start = new Date(point.time).getTime();
     return etaTime >= start && etaTime < start + MS_PER_HOUR;
   });
+}
+
+function forecastWindow(forecast: CongestionPoint[]): { forecastStart?: string; forecastEnd?: string } {
+  const validTimes = forecast
+    .map((point) => new Date(point.time).getTime())
+    .filter((time) => Number.isFinite(time))
+    .sort((a, b) => a - b);
+  if (validTimes.length === 0) return {};
+  return {
+    forecastStart: new Date(validTimes[0]).toISOString(),
+    forecastEnd: new Date(validTimes[validTimes.length - 1]).toISOString(),
+  };
+}
+
+function buildForecastFreshness(params: {
+  forecast: CongestionPoint[];
+  now: Date;
+  matchedEtaBucketCount: number;
+  fallbackCount: number;
+}): ForecastFreshness {
+  const { forecastStart, forecastEnd } = forecastWindow(params.forecast);
+  const forecastEndMs = forecastEnd ? new Date(forecastEnd).getTime() : Number.NaN;
+  const hasForecast = Boolean(forecastStart && forecastEnd);
+  const isPastForecast = hasForecast && Number.isFinite(forecastEndMs) && forecastEndMs < params.now.getTime();
+  const noEtaMatches = params.matchedEtaBucketCount === 0 && params.fallbackCount > 0;
+  const isStale = !hasForecast || isPastForecast || noEtaMatches;
+
+  let reason = "선박 ETA가 congestion forecast 범위 안에 있어 ETA 시간대 기준으로 계산했습니다.";
+  if (!hasForecast) {
+    reason = "congestion forecast가 없어 currentLevel fallback을 사용했습니다.";
+  } else if (isPastForecast) {
+    reason = "congestion forecast가 현재 시각보다 과거 범위라 선박 ETA에 대해 currentLevel fallback을 사용했습니다.";
+  } else if (noEtaMatches) {
+    reason = "선박 ETA가 congestion forecast 범위 밖에 있어 currentLevel fallback을 사용했습니다.";
+  }
+
+  return {
+    isStale,
+    ...(forecastStart ? { forecastStart } : {}),
+    ...(forecastEnd ? { forecastEnd } : {}),
+    now: params.now.toISOString(),
+    matchedEtaBucketCount: params.matchedEtaBucketCount,
+    fallbackCount: params.fallbackCount,
+    reason,
+  };
 }
 
 function levelStatus(level: number): CongestionWaitingStatus {
@@ -221,6 +297,58 @@ function confidence(params: {
   return "low";
 }
 
+function buildEmptyReason(summary: EnergyDecisionSummary, freshness: ForecastFreshness): EmptyReason | undefined {
+  if (summary.recommendedCount > 0) return undefined;
+
+  if (summary.candidateCount === 0) {
+    return {
+      code: "NO_UNDERWAY_CANDIDATES",
+      title: "현재 JIT 감속 권고 대상 선박이 없습니다.",
+      description: "접근 중인 선박이 없거나 속도·거리 조건을 만족하는 선박이 없습니다.",
+      suggestions: [
+        "AIS 선박 위치와 속도 데이터가 최신인지 확인하세요.",
+        "부산항 중심 기준 10~600해리 범위의 항해 중 선박이 있는지 확인하세요.",
+      ],
+    };
+  }
+
+  if (freshness.isStale && summary.currentLevelFallbackCount > 0) {
+    return {
+      code: "STALE_FORECAST_LOW_FALLBACK_CONGESTION",
+      title: "현재 JIT 감속 권고 대상 선박이 없습니다.",
+      description:
+        "혼잡도 forecast가 현재 선박 ETA 범위와 맞지 않아 currentLevel fallback으로 계산했습니다. 현재 fallback 혼잡도가 낮아 감속 권고가 생성되지 않았습니다.",
+      suggestions: [
+        "Port-MIS enrichment를 최신화한 뒤 다시 확인하세요.",
+        "혼잡도 forecast가 선박 ETA 시간대를 포함하는지 확인하세요.",
+        "현재 또는 ETA 시간대 혼잡도가 낮으면 감속 권고가 표시되지 않을 수 있습니다.",
+      ],
+    };
+  }
+
+  if (summary.lowCongestionSkippedCount > 0 || summary.noWaitSkippedCount > 0) {
+    return {
+      code: "LOW_CONGESTION_OR_NO_WAIT",
+      title: "현재 JIT 감속 권고 대상 선박이 없습니다.",
+      description: "선박 ETA 시간대의 혼잡도가 낮거나 예상 대기시간이 작아 감속 권고가 생성되지 않았습니다.",
+      suggestions: [
+        "혼잡도 forecast의 피크 시간대와 선박 ETA가 겹치는지 확인하세요.",
+        "Port-MIS 데이터 최신화 후 다시 확인하세요.",
+      ],
+    };
+  }
+
+  return {
+    code: "NO_EFFECTIVE_SPEED_REDUCTION",
+    title: "현재 JIT 감속 권고 대상 선박이 없습니다.",
+    description: "계산된 권고 속도가 현재 속도보다 낮지 않아 감속 권고로 표시하지 않았습니다.",
+    suggestions: [
+      "선박의 현재 속도와 부산항까지의 거리를 확인하세요.",
+      "혼잡도가 높아져 실제 대기시간을 항해시간으로 흡수할 수 있을 때 권고가 표시됩니다.",
+    ],
+  };
+}
+
 export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): EnergyDecisionResult {
   const portConfig = input.portConfig ?? BUSAN_PORT;
   const now = input.now ?? new Date();
@@ -228,6 +356,12 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
   const inPort = currentInPort(input.congestion, portCalls, portConfig);
   const decisions: EnergyDecision[] = [];
   let candidateCount = 0;
+  let etaForecastMatchedCount = 0;
+  let currentLevelFallbackCount = 0;
+  let lowCongestionSkippedCount = 0;
+  let noWaitSkippedCount = 0;
+  let minSpeedSkippedCount = 0;
+  let speedNotReducedSkippedCount = 0;
 
   for (const ship of input.ships) {
     if (ship.status !== "underway" || ship.sog < MIN_SOG_KN) continue;
@@ -241,22 +375,38 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
     const currentEtaDate = addHours(now, currentTravelHours);
     const currentBucket = findForecastBucket(input.congestion.forecast, currentEtaDate);
     const congestionBasis: CongestionBasis = currentBucket ? "eta-forecast-bucket" : "current-level-fallback";
+    if (currentBucket) etaForecastMatchedCount += 1;
+    else currentLevelFallbackCount += 1;
     const currentCongestionLevel = currentBucket?.level ?? input.congestion.currentLevel ?? 0;
     const currentWait = estimateWaitingMinutesByCongestion(currentCongestionLevel);
 
-    if (currentWait.status === "원활" || currentWait.waitingMinutes <= 0) continue;
+    if (currentWait.status === "원활") {
+      lowCongestionSkippedCount += 1;
+      noWaitSkippedCount += 1;
+      continue;
+    }
+    if (currentWait.waitingMinutes <= 0) {
+      noWaitSkippedCount += 1;
+      continue;
+    }
 
     const waitHours = currentWait.waitingMinutes / 60;
     const idealJitSpeedKn = distanceNm / (currentTravelHours + waitHours);
     const minSpeedApplied = idealJitSpeedKn < DEFAULT_MIN_SPEED_KN;
     const recommendedSpeedKn = Math.min(currentSpeedKn, Math.max(DEFAULT_MIN_SPEED_KN, idealJitSpeedKn));
-    if (recommendedSpeedKn >= currentSpeedKn) continue;
+    if (recommendedSpeedKn >= currentSpeedKn) {
+      speedNotReducedSkippedCount += 1;
+      continue;
+    }
 
     const recommendedTravelHours = distanceNm / recommendedSpeedKn;
     const absorbedWaitMinutes = Math.min(currentWait.waitingMinutes, Math.max(0, (recommendedTravelHours - currentTravelHours) * 60));
     const residualWaitMinutes = Math.max(0, currentWait.waitingMinutes - absorbedWaitMinutes);
     const reducedWaitingMinutes = Math.max(0, currentWait.waitingMinutes - residualWaitMinutes);
-    if (reducedWaitingMinutes <= 0) continue;
+    if (reducedWaitingMinutes <= 0) {
+      if (minSpeedApplied) minSpeedSkippedCount += 1;
+      continue;
+    }
 
     const recommendedEtaDate = addHours(now, recommendedTravelHours);
     const recommendedBucket = findForecastBucket(input.congestion.forecast, recommendedEtaDate);
@@ -349,6 +499,12 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
     (acc, decision) => ({
       candidateCount: acc.candidateCount,
       recommendedCount: acc.recommendedCount + 1,
+      etaForecastMatchedCount: acc.etaForecastMatchedCount,
+      currentLevelFallbackCount: acc.currentLevelFallbackCount,
+      lowCongestionSkippedCount: acc.lowCongestionSkippedCount,
+      noWaitSkippedCount: acc.noWaitSkippedCount,
+      minSpeedSkippedCount: acc.minSpeedSkippedCount,
+      speedNotReducedSkippedCount: acc.speedNotReducedSkippedCount,
       totalReducedWaitingMinutes: acc.totalReducedWaitingMinutes + decision.reducedWaitingMinutes,
       totalEstimatedFuelSavedKg: acc.totalEstimatedFuelSavedKg + decision.estimatedFuelSavedKg,
       totalEstimatedCo2ReducedKg: acc.totalEstimatedCo2ReducedKg + decision.estimatedCo2ReducedKg,
@@ -356,11 +512,24 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
     {
       candidateCount,
       recommendedCount: 0,
+      etaForecastMatchedCount,
+      currentLevelFallbackCount,
+      lowCongestionSkippedCount,
+      noWaitSkippedCount,
+      minSpeedSkippedCount,
+      speedNotReducedSkippedCount,
       totalReducedWaitingMinutes: 0,
       totalEstimatedFuelSavedKg: 0,
       totalEstimatedCo2ReducedKg: 0,
     }
   );
+  const forecastFreshness = buildForecastFreshness({
+    forecast: input.congestion.forecast,
+    now,
+    matchedEtaBucketCount: etaForecastMatchedCount,
+    fallbackCount: currentLevelFallbackCount,
+  });
+  const emptyReason = buildEmptyReason(summary, forecastFreshness);
 
   return {
     source: "deterministic-jit",
@@ -373,8 +542,10 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
       "port-mis-port-calls",
       "energy-baseline-data",
     ],
+    forecastFreshness,
     decisions,
     summary,
+    ...(emptyReason ? { emptyReason } : {}),
     calculationNote: ENERGY_ESTIMATE_DISCLAIMER,
   };
 }

@@ -23,6 +23,13 @@ export async function GET() {
     portCalls,
     portConfig: BUSAN_PORT,
   });
+  console.info("[energy-decisions]", {
+    candidateCount: result.summary.candidateCount,
+    recommendedCount: result.summary.recommendedCount,
+    etaForecastMatchedCount: result.summary.etaForecastMatchedCount,
+    currentLevelFallbackCount: result.summary.currentLevelFallbackCount,
+    isForecastStale: result.forecastFreshness.isStale,
+  });
 
   return Response.json({
     ...result,

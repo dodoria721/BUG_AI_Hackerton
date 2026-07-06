@@ -30,6 +30,26 @@ npm run dev
 키 없이도 `api/ships`, `api/congestion`은 목업 데이터로 끝까지 동작합니다.
 `api/advisor`는 `OPENAI_API_KEY`가 있어야 실제 LLM 응답을 받습니다.
 
+## Energy Decision / JIT 감속 권고 확인
+
+`/api/energy-decisions`는 AIS 선박 ETA가 `/api/congestion`의 forecast 시간대에 포함될 때 ETA bucket 기준으로 JIT 감속 권고를 계산합니다. Port-MIS congestion forecast가 오래되어 선박 ETA 범위를 포함하지 않으면 `currentLevel` fallback으로 계산하며, 이 경우 `/api/energy-decisions` 응답의 `forecastFreshness`, `summary.currentLevelFallbackCount`, `emptyReason`에서 이유를 확인할 수 있습니다.
+
+Port-MIS 데이터를 최신화한 뒤 다시 확인하려면:
+
+```bash
+npm run enrich:portmis
+```
+
+확인 URL:
+
+```txt
+http://localhost:3000/api/congestion
+http://localhost:3000/api/energy-decisions
+http://localhost:3000/dashboard
+```
+
+현재 또는 ETA 시간대 혼잡도가 낮으면 권고가 0건일 수 있습니다. 이 경우 대시보드의 감속 권고 카드가 후보 선박 수, ETA forecast 매칭 수, currentLevel fallback 사용 수, 낮은 혼잡 제외 수를 표시합니다.
+
 ## 폴더 구조
 
 - `app/` — 페이지(App Router)와 API 라우트

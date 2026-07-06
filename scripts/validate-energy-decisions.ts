@@ -60,6 +60,9 @@ const forecastResult = computeEnergyDecisions({
 assert.equal(forecastResult.source, "deterministic-jit");
 assert.equal(forecastResult.summary.candidateCount, 1);
 assert.equal(forecastResult.summary.recommendedCount, 1);
+assert.equal(forecastResult.summary.etaForecastMatchedCount, 1);
+assert.equal(forecastResult.summary.currentLevelFallbackCount, 0);
+assert.equal(forecastResult.forecastFreshness.isStale, false);
 assert.equal(forecastResult.decisions[0].congestionBasis, "eta-forecast-bucket");
 assert.equal(forecastResult.decisions[0].currentCongestionLevel, 0.9);
 assert.ok(forecastResult.decisions[0].recommendedSpeedKn < forecastResult.decisions[0].currentSpeedKn);
@@ -75,6 +78,8 @@ const fallbackResult = computeEnergyDecisions({
 });
 
 assert.equal(fallbackResult.summary.recommendedCount, 1);
+assert.equal(fallbackResult.summary.currentLevelFallbackCount, 1);
+assert.equal(fallbackResult.forecastFreshness.isStale, true);
 assert.equal(fallbackResult.decisions[0].congestionBasis, "current-level-fallback");
 assert.equal(fallbackResult.decisions[0].currentInPortBasis, "level-times-p99");
 
@@ -103,5 +108,45 @@ function sum(result: EnergyDecisionResult): number {
 }
 
 assert.equal(forecastResult.summary.totalEstimatedFuelSavedKg, sum(forecastResult));
+
+const noCandidateResult = computeEnergyDecisions({
+  ships: [ship({ status: "moored", sog: 0 })],
+  congestion: congestion(0.9),
+  portCalls,
+  portConfig: BUSAN_PORT,
+  now,
+});
+
+assert.equal(noCandidateResult.summary.candidateCount, 0);
+assert.equal(noCandidateResult.summary.recommendedCount, 0);
+assert.equal(noCandidateResult.emptyReason?.code, "NO_UNDERWAY_CANDIDATES");
+
+const freshLowCongestionResult = computeEnergyDecisions({
+  ships: [ship()],
+  congestion: congestion(0.2),
+  portCalls,
+  portConfig: BUSAN_PORT,
+  now,
+});
+
+assert.equal(freshLowCongestionResult.summary.candidateCount, 1);
+assert.equal(freshLowCongestionResult.summary.recommendedCount, 0);
+assert.equal(freshLowCongestionResult.summary.etaForecastMatchedCount, 1);
+assert.equal(freshLowCongestionResult.summary.lowCongestionSkippedCount, 1);
+assert.equal(freshLowCongestionResult.emptyReason?.code, "LOW_CONGESTION_OR_NO_WAIT");
+
+const staleLowFallbackResult = computeEnergyDecisions({
+  ships: [ship()],
+  congestion: { ...congestion(0.2), currentLevel: 0.2 },
+  portCalls,
+  portConfig: BUSAN_PORT,
+  now: new Date("2026-07-06T00:00:00.000Z"),
+});
+
+assert.equal(staleLowFallbackResult.summary.candidateCount, 1);
+assert.equal(staleLowFallbackResult.summary.recommendedCount, 0);
+assert.equal(staleLowFallbackResult.summary.currentLevelFallbackCount, 1);
+assert.equal(staleLowFallbackResult.forecastFreshness.isStale, true);
+assert.equal(staleLowFallbackResult.emptyReason?.code, "STALE_FORECAST_LOW_FALLBACK_CONGESTION");
 
 console.log("energy decision validation passed");
