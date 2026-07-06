@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import type { NewSimulatedShipInput, SimulatedVesselType } from "@/frontend/types/simulation";
+import { BUSAN_PORT } from "@/backend/ports/seed-port";
+import type { NewSimulatedShipInput, SimulatedVesselType, SimulationDestinationPortId } from "@/frontend/types/simulation";
 import { SIMULATED_VESSEL_TYPE_LABELS, SIMULATED_VESSEL_TYPES } from "@/frontend/types/simulation";
 
 interface SimulatedShipModalProps {
@@ -38,6 +39,7 @@ export default function SimulatedShipModal({ open, position, defaultName, onCanc
   const [sog, setSog] = useState("14");
   const [vesselType, setVesselType] = useState<SimulatedVesselType>("container");
   const [grossTonnage, setGrossTonnage] = useState("80000");
+  const [destinationPortId, setDestinationPortId] = useState<SimulationDestinationPortId>("busan-north");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +48,7 @@ export default function SimulatedShipModal({ open, position, defaultName, onCanc
     setSog("14");
     setVesselType("container");
     setGrossTonnage("80000");
+    setDestinationPortId(BUSAN_PORT.simulationDestinations[0]?.id ?? "busan-north");
     setError(null);
   }, [defaultName, open, position?.lat, position?.lng]);
 
@@ -74,6 +77,7 @@ export default function SimulatedShipModal({ open, position, defaultName, onCanc
       sog: parsedSog,
       vesselType,
       grossTonnage: Math.round(parsedGrossTonnage),
+      destinationPortId,
     });
   }
 
@@ -150,6 +154,16 @@ export default function SimulatedShipModal({ open, position, defaultName, onCanc
           <label style={labelStyle}>
             총톤수 GT
             <input type="number" min={100} step={100} value={grossTonnage} onChange={(event) => setGrossTonnage(event.target.value)} style={fieldStyle} />
+          </label>
+          <label style={{ ...labelStyle, gridColumn: "1 / -1" }}>
+            도착지
+            <select value={destinationPortId} onChange={(event) => setDestinationPortId(event.target.value as SimulationDestinationPortId)} style={fieldStyle}>
+              {BUSAN_PORT.simulationDestinations.map((destination) => (
+                <option key={destination.id} value={destination.id}>
+                  {destination.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label style={{ ...labelStyle, gridColumn: "1 / -1" }}>
             선종

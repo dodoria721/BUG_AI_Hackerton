@@ -49,6 +49,26 @@ function simulatedShipIcon(): L.DivIcon {
   });
 }
 
+function destinationIcon(shortName: string): L.DivIcon {
+  const html = `
+    <div style="
+      min-width:42px;height:28px;border-radius:8px;
+      background:#38bdf8;color:#082f49;
+      border:2px solid #0b1220;
+      display:flex;align-items:center;justify-content:center;
+      font-weight:900;font-size:10px;letter-spacing:.03em;
+      box-shadow:0 10px 24px rgba(0,0,0,.28);
+      padding:0 7px;
+      white-space:nowrap;
+    ">PORT ${shortName}</div>`;
+  return L.divIcon({
+    html,
+    className: "simulation-port-marker",
+    iconSize: [58, 28],
+    iconAnchor: [29, 14],
+  });
+}
+
 const simIcon = simulatedShipIcon();
 const basemap = BASEMAPS.find((item) => item.id === "dark" && item.url) ?? BASEMAPS.find((item) => item.url) ?? BASEMAPS[0];
 
@@ -58,15 +78,37 @@ export default function SimulationMap({ ships, simulationMode, onMapContextMenu 
       <MapContainer center={[BUSAN_PORT.center.lat, BUSAN_PORT.center.lon]} zoom={11} zoomControl={false} className="h-full w-full">
         {basemap.url && <TileLayer attribution={basemap.attribution} url={basemap.url} />}
         <SimulationContextMenuHandler enabled={simulationMode} onMapContextMenu={onMapContextMenu} />
+        {BUSAN_PORT.simulationDestinations.map((destination) => (
+          <Marker
+            key={destination.id}
+            position={[destination.center.lat, destination.center.lon]}
+            icon={destinationIcon(destination.shortName)}
+          >
+            <Tooltip direction="top" offset={[0, -16]}>
+              <span style={{ fontWeight: 800 }}>PORT</span> · {destination.name}
+            </Tooltip>
+            <Popup>
+              <div className="text-sm">
+                <p style={{ margin: "0 0 6px", fontWeight: 900, color: "#0369a1", letterSpacing: ".06em" }}>SIMULATION PORT</p>
+                <p style={{ margin: "3px 0", fontWeight: 800 }}>{destination.name}</p>
+                <p style={{ margin: "3px 0" }}>혼잡도 기준 지역: {destination.congestionRegionId}</p>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
         {ships.map((ship) => (
+          (() => {
+            const destination = BUSAN_PORT.simulationDestinations.find((item) => item.id === ship.destinationPortId) ?? BUSAN_PORT.simulationDestinations[0];
+            return (
           <Marker key={ship.id} position={[ship.lat, ship.lng]} icon={simIcon}>
             <Tooltip direction="top" offset={[0, -16]}>
-              <span style={{ fontWeight: 800 }}>SIM</span> · {ship.name} · {ship.sog}kn
+              <span style={{ fontWeight: 800 }}>SIM</span> · {ship.name} · {destination?.shortName ?? "북항"} · {ship.sog}kn
             </Tooltip>
             <Popup>
               <div className="text-sm">
                 <p style={{ margin: "0 0 6px", fontWeight: 900, color: "#ca8a04", letterSpacing: ".06em" }}>SIMULATION</p>
                 <p style={{ margin: "3px 0", fontWeight: 800 }}>{ship.name}</p>
+                <p style={{ margin: "3px 0" }}>도착지: {destination?.name ?? "부산항 북항"}</p>
                 <p style={{ margin: "3px 0" }}>속도: {ship.sog}kn</p>
                 <p style={{ margin: "3px 0" }}>선종: {SIMULATED_VESSEL_TYPE_LABELS[ship.vesselType]}</p>
                 <p style={{ margin: "3px 0" }}>GT: {ship.grossTonnage.toLocaleString()}</p>
@@ -76,6 +118,8 @@ export default function SimulationMap({ ships, simulationMode, onMapContextMenu 
               </div>
             </Popup>
           </Marker>
+            );
+          })()
         ))}
       </MapContainer>
       <div

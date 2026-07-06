@@ -95,6 +95,30 @@ export const BUSAN_PORT: PortConfig = {
     },
   ],
 
+  simulationDestinations: [
+    {
+      id: "busan-north",
+      name: "부산항 북항",
+      shortName: "북항",
+      center: { lat: 35.09, lon: 129.07 },
+      congestionRegionId: "busan",
+    },
+    {
+      id: "gamcheon",
+      name: "감천항",
+      shortName: "감천",
+      center: { lat: 35.078, lon: 129.01 },
+      congestionRegionId: "gamcheon",
+    },
+    {
+      id: "busan-new",
+      name: "부산신항",
+      shortName: "신항",
+      center: { lat: 35.081, lon: 128.79 },
+      congestionRegionId: "sinhang",
+    },
+  ],
+
   // ── 동시 재항 척수 용량 + 대기시간 보정 ──
   // 2019-01~2024-12 부산항만공사 입출항 집계 270,357건에서 구간겹침 스윕으로 산출.
   // 검증: 컨테이너 동시재항 중앙 39척 ≈ 물리 컨테이너 선석 40석 (평시 선석 포화).

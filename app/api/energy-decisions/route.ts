@@ -1,4 +1,5 @@
 import { fetchShips } from "@/backend/ais/ship-source";
+import { resolveRegionalCongestion } from "@/backend/congestion/regional-congestion";
 import { computeCongestionForecast } from "@/backend/prediction/congestion";
 import { computeEnergyDecisions } from "@/backend/prediction/energy-decision";
 import { computeSimulationEnergyDecisions } from "@/backend/prediction/simulation-energy";
@@ -55,9 +56,10 @@ export async function POST(request: Request) {
       ? (body as { congestionMode?: unknown }).congestionMode
       : undefined;
 
-  const [portCalls, portMisCongestion] = await Promise.all([
+  const [portCalls, portMisCongestion, regionalCongestion] = await Promise.all([
     fetchPortCalls(),
     fetchPortCongestion(),
+    resolveRegionalCongestion(BUSAN_PORT),
   ]);
 
   const congestion = portMisCongestion ?? computeCongestionForecast([], BUSAN_PORT);
@@ -66,6 +68,7 @@ export async function POST(request: Request) {
     congestionMode,
     congestion,
     portCalls,
+    regionalCongestion,
     portConfig: BUSAN_PORT,
   });
 

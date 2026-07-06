@@ -133,6 +133,16 @@ export interface RegionCongestionSeries {
   source: string; // 곡선 근거
 }
 
+export type SimulationDestinationPortId = "busan-north" | "gamcheon" | "busan-new";
+
+export interface SimulationDestinationPort {
+  id: SimulationDestinationPortId;
+  name: string;
+  shortName: string;
+  center: LatLon;
+  congestionRegionId: string;
+}
+
 export interface PortConfig {
   name: string;
   center: LatLon;
@@ -147,6 +157,7 @@ export interface PortConfig {
   // Port-MIS(입출항, 수백 척)와 달리 해역 내 모든 AIS 송신선을 세므로 규모가 훨씬 크다(전용 앵커).
   aisStatsHourlyCapacity: number;
   congestionRegions: CongestionRegion[]; // 지역별 혼잡도 분할(부산/감천/신항 등)
+  simulationDestinations: SimulationDestinationPort[]; // /simulation 가상 선박 도착지 선택지
   portCallCapacity: PortCallCapacity; // 동시 재항 용량·대기 보정(입출항 집계 실측)
 }
 

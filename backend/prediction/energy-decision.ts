@@ -1,4 +1,13 @@
-import type { CongestionForecast, CongestionPoint, PortCall, PortConfig, ShipStatus } from "../ports/port-types";
+import type {
+  CongestionForecast,
+  CongestionPoint,
+  PortCall,
+  PortConfig,
+  RegionCongestionSeries,
+  ShipStatus,
+  SimulationDestinationPort,
+  SimulationDestinationPortId,
+} from "../ports/port-types";
 import { BUSAN_PORT } from "../ports/seed-port";
 import { haversineDistanceKm } from "./eta";
 import {
@@ -26,7 +35,13 @@ const MIN_DISTANCE_NM = 10;
 const SIMULATION_MIN_DISTANCE_NM = 1;
 const MAX_DISTANCE_NM = 600;
 
-export type CongestionBasis = "eta-forecast-bucket" | "current-level-fallback" | "dashboard-current-level";
+export type CongestionBasis =
+  | "eta-forecast-bucket"
+  | "current-level-fallback"
+  | "dashboard-current-level"
+  | "destination-current-level"
+  | "destination-eta-forecast-bucket"
+  | "global-current-level-fallback";
 export type CurrentInPortBasis = "actual-port-calls" | "level-times-p99" | "unknown";
 export type EnergyDecisionCongestionMode = "dashboard-current" | "eta-forecast";
 
@@ -44,6 +59,7 @@ export interface EnergyDecisionShipInput {
   imo?: string;
   grossTonnage?: number;
   vesselType?: string;
+  destinationPortId?: SimulationDestinationPortId;
   source?: "simulation";
   isSimulated?: boolean;
 }
@@ -56,6 +72,7 @@ export interface ComputeEnergyDecisionsInput {
   now?: Date;
   mode?: "simulation";
   congestionMode?: EnergyDecisionCongestionMode;
+  regionalCongestion?: RegionCongestionSeries[];
 }
 
 export interface EnergyDecision {
@@ -66,6 +83,8 @@ export interface EnergyDecision {
   imo?: string;
   source?: "simulation";
   isSimulated?: boolean;
+  destinationPortId?: SimulationDestinationPortId;
+  destinationPortName?: string;
 
   status: "underway";
   distanceNm: number;
@@ -123,6 +142,17 @@ export interface EnergyDecisionSummary {
   totalReducedWaitingMinutes: number;
   totalEstimatedFuelSavedKg: number;
   totalEstimatedCo2ReducedKg: number;
+  byDestination?: EnergyDecisionDestinationSummary[];
+}
+
+export interface EnergyDecisionDestinationSummary {
+  destinationPortId: SimulationDestinationPortId;
+  destinationPortName: string;
+  candidateCount: number;
+  recommendedCount: number;
+  totalReducedWaitingMinutes: number;
+  totalEstimatedFuelSavedKg: number;
+  totalEstimatedCo2ReducedKg: number;
 }
 
 export interface ForecastFreshness {
@@ -157,7 +187,8 @@ export interface EnergyDecisionResult {
   basis:
     | "jit-arrival-energy-decision"
     | "jit-arrival-simulation"
-    | "jit-arrival-simulation-dashboard-current-congestion";
+    | "jit-arrival-simulation-dashboard-current-congestion"
+    | "jit-arrival-simulation-destination-congestion";
   lastUpdated: string;
   dataSources: string[];
   dashboardCongestion?: {
@@ -166,6 +197,16 @@ export interface EnergyDecisionResult {
     source?: string;
     basis?: string;
   };
+  destinationCongestion?: Record<
+    SimulationDestinationPortId,
+    {
+      name: string;
+      level: number;
+      status: CongestionWaitingStatus;
+      source?: string;
+      basis: CongestionBasis;
+    }
+  >;
   forecastFreshness: ForecastFreshness;
   decisions: EnergyDecision[];
   summary: EnergyDecisionSummary;
@@ -255,6 +296,83 @@ function levelStatus(level: number): CongestionWaitingStatus {
   return estimateWaitingMinutesByCongestion(level).status;
 }
 
+function defaultSimulationDestination(portConfig: PortConfig): SimulationDestinationPort {
+  return (
+    portConfig.simulationDestinations[0] ?? {
+      id: "busan-north",
+      name: "부산항 북항",
+      shortName: "북항",
+      center: portConfig.center,
+      congestionRegionId: "busan",
+    }
+  );
+}
+
+function simulationDestinationFor(
+  portConfig: PortConfig,
+  destinationPortId?: SimulationDestinationPortId
+): SimulationDestinationPort {
+  return (
+    portConfig.simulationDestinations.find((destination) => destination.id === destinationPortId) ??
+    defaultSimulationDestination(portConfig)
+  );
+}
+
+function regionalSeriesForDestination(
+  regionalCongestion: RegionCongestionSeries[] | undefined,
+  destination: SimulationDestinationPort
+): RegionCongestionSeries | undefined {
+  return regionalCongestion?.find((region) => region.id === destination.congestionRegionId);
+}
+
+function destinationCurrentCongestion(params: {
+  congestion: CongestionForecast;
+  regionalCongestion?: RegionCongestionSeries[];
+  destination: SimulationDestinationPort;
+}): { level: number; status: CongestionWaitingStatus; source?: string; basis: CongestionBasis; forecast: CongestionPoint[] } {
+  const region = regionalSeriesForDestination(params.regionalCongestion, params.destination);
+  if (region) {
+    return {
+      level: region.currentLevel,
+      status: levelStatus(region.currentLevel),
+      source: region.source,
+      basis: "destination-current-level",
+      forecast: region.forecast,
+    };
+  }
+
+  const level = params.congestion.currentLevel ?? 0;
+  return {
+    level,
+    status: levelStatus(level),
+    source: params.congestion.source,
+    basis: "global-current-level-fallback",
+    forecast: params.congestion.forecast,
+  };
+}
+
+function destinationCongestionSummary(
+  congestion: CongestionForecast,
+  regionalCongestion: RegionCongestionSeries[] | undefined,
+  portConfig: PortConfig
+): EnergyDecisionResult["destinationCongestion"] {
+  return Object.fromEntries(
+    portConfig.simulationDestinations.map((destination) => {
+      const current = destinationCurrentCongestion({ congestion, regionalCongestion, destination });
+      return [
+        destination.id,
+        {
+          name: destination.name,
+          level: round(current.level, 3),
+          status: current.status,
+          ...(current.source ? { source: current.source } : {}),
+          basis: current.basis,
+        },
+      ];
+    })
+  ) as EnergyDecisionResult["destinationCongestion"];
+}
+
 function findPortCall(ship: EnergyDecisionShipInput, portCalls: PortCall[]): PortCall | undefined {
   const shipCallSign = ship.callSign?.trim().toUpperCase();
   if (shipCallSign) {
@@ -342,7 +460,14 @@ function confidence(params: {
   currentInPortBasis: CurrentInPortBasis;
 }): Confidence {
   let score = 0;
-  if (params.congestionBasis === "eta-forecast-bucket" || params.congestionBasis === "dashboard-current-level") score += 2;
+  if (
+    params.congestionBasis === "eta-forecast-bucket" ||
+    params.congestionBasis === "dashboard-current-level" ||
+    params.congestionBasis === "destination-current-level" ||
+    params.congestionBasis === "destination-eta-forecast-bucket"
+  ) {
+    score += 2;
+  }
   if (params.grossTonnage != null) score += 1;
   if (params.vesselType) score += 1;
   if (params.fuelConfidence === "high") score += 2;
@@ -378,7 +503,7 @@ function buildEmptyReason(
     return {
       code: "SIMULATION_DASHBOARD_CURRENT_NO_RECOMMENDATION",
       title: "현재 생성된 가상 선박 기준으로 JIT 감속 권고가 없습니다.",
-      description: `현재 대시보드 혼잡도 ${levelText} 기준으로는 해당 가상 선박의 감속 권고 효과가 크지 않습니다.`,
+      description: `선택한 도착지의 현재 혼잡도 ${levelText} 기준으로는 해당 가상 선박의 감속 권고 효과가 크지 않습니다.`,
       suggestions: [
         "현재 혼잡도가 낮으면 감속 권고가 표시되지 않을 수 있습니다.",
         "가상 선박 속도가 이미 낮거나 부산항과 너무 가까우면 감속 효과가 제한적일 수 있습니다.",
@@ -440,28 +565,51 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
   let noWaitSkippedCount = 0;
   let minSpeedSkippedCount = 0;
   let speedNotReducedSkippedCount = 0;
+  const candidateByDestination = new Map<SimulationDestinationPortId, { destination: SimulationDestinationPort; count: number }>();
 
   for (const ship of input.ships) {
     if (ship.status !== "underway" || ship.sog < MIN_SOG_KN) continue;
 
-    const distanceNm = haversineDistanceKm({ lat: ship.lat, lon: ship.lon }, portConfig.center) * KM_TO_NM;
     const simulated = isSimulatedShip(ship) || simulationMode;
+    const destination = simulated ? simulationDestinationFor(portConfig, ship.destinationPortId) : undefined;
+    const destinationCurrent = destination
+      ? destinationCurrentCongestion({
+          congestion: input.congestion,
+          regionalCongestion: input.regionalCongestion,
+          destination,
+        })
+      : undefined;
+    const targetCenter = destination?.center ?? portConfig.center;
+    const distanceNm = haversineDistanceKm({ lat: ship.lat, lon: ship.lon }, targetCenter) * KM_TO_NM;
     const minDistanceNm = simulated ? SIMULATION_MIN_DISTANCE_NM : MIN_DISTANCE_NM;
     if (distanceNm < minDistanceNm || distanceNm > MAX_DISTANCE_NM) continue;
     candidateCount += 1;
+    if (destination) {
+      const current = candidateByDestination.get(destination.id);
+      candidateByDestination.set(destination.id, { destination, count: (current?.count ?? 0) + 1 });
+    }
 
     const currentSpeedKn = Math.max(0.1, ship.sog);
     const currentTravelHours = distanceNm / currentSpeedKn;
     const currentEtaDate = addHours(now, currentTravelHours);
-    const currentBucket = useDashboardCurrent ? undefined : findForecastBucket(input.congestion.forecast, currentEtaDate);
+    const destinationForecast = destinationCurrent?.forecast;
+    const currentBucket = useDashboardCurrent
+      ? undefined
+      : destinationForecast?.length
+        ? findForecastBucket(destinationForecast, currentEtaDate)
+        : findForecastBucket(input.congestion.forecast, currentEtaDate);
     const congestionBasis: CongestionBasis = useDashboardCurrent
-      ? "dashboard-current-level"
+      ? destinationCurrent?.basis ?? "dashboard-current-level"
       : currentBucket
-        ? "eta-forecast-bucket"
+        ? destinationForecast?.length
+          ? "destination-eta-forecast-bucket"
+          : "eta-forecast-bucket"
         : "current-level-fallback";
     if (currentBucket) etaForecastMatchedCount += 1;
     else if (!useDashboardCurrent) currentLevelFallbackCount += 1;
-    const currentCongestionLevel = useDashboardCurrent ? input.congestion.currentLevel ?? 0 : currentBucket?.level ?? input.congestion.currentLevel ?? 0;
+    const currentCongestionLevel = useDashboardCurrent
+      ? destinationCurrent?.level ?? input.congestion.currentLevel ?? 0
+      : currentBucket?.level ?? destinationCurrent?.level ?? input.congestion.currentLevel ?? 0;
     const currentWait = estimateWaitingMinutesByCongestion(currentCongestionLevel);
 
     if (currentWait.status === "원활") {
@@ -493,7 +641,11 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
     }
 
     const recommendedEtaDate = addHours(now, recommendedTravelHours);
-    const recommendedBucket = useDashboardCurrent ? undefined : findForecastBucket(input.congestion.forecast, recommendedEtaDate);
+    const recommendedBucket = useDashboardCurrent
+      ? undefined
+      : destinationForecast?.length
+        ? findForecastBucket(destinationForecast, recommendedEtaDate)
+        : findForecastBucket(input.congestion.forecast, recommendedEtaDate);
     const recommendedCongestionLevel = useDashboardCurrent ? currentCongestionLevel : recommendedBucket?.level ?? currentCongestionLevel;
     const recommendedCongestionStatus = levelStatus(recommendedCongestionLevel);
 
@@ -512,9 +664,15 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
     if (estimatedFuelSavedKg <= 0 || estimatedCo2ReducedKg <= 0) continue;
 
     const reasons = [
-      congestionBasis === "dashboard-current-level"
-        ? `대시보드 현재 Port-MIS 혼잡도 ${round(currentCongestionLevel, 2)} 사용`
-        : congestionBasis === "eta-forecast-bucket"
+      congestionBasis === "destination-current-level"
+        ? `${destination?.name ?? "선택 도착지"} 현재 혼잡도 ${round(currentCongestionLevel, 2)} 사용`
+        : congestionBasis === "global-current-level-fallback"
+          ? `선택 도착지 혼잡도 없음, 전체 currentLevel ${round(currentCongestionLevel, 2)} 사용`
+          : congestionBasis === "dashboard-current-level"
+            ? `대시보드 현재 Port-MIS 혼잡도 ${round(currentCongestionLevel, 2)} 사용`
+            : congestionBasis === "destination-eta-forecast-bucket"
+              ? `${destination?.name ?? "선택 도착지"} ETA 시간대 forecast bucket(${bucketStart(currentEtaDate)}) 혼잡도 ${round(currentCongestionLevel, 2)} 사용`
+              : congestionBasis === "eta-forecast-bucket"
         ? `ETA 시간대 forecast bucket(${bucketStart(currentEtaDate)}) 혼잡도 ${round(currentCongestionLevel, 2)} 사용`
         : `ETA 시간대 forecast bucket 없음, currentLevel ${round(currentCongestionLevel, 2)} 사용`,
       `JIT 속도 ${round(recommendedSpeedKn, 1)}kn로 ${Math.round(reducedWaitingMinutes)}분 대기 흡수`,
@@ -528,7 +686,7 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
     const calculationBasis = [
       "JIT 정시도착: v = distanceNm / (distanceNm / currentSpeedKn + waitingHours)",
       useDashboardCurrent
-        ? "dashboard current Port-MIS congestion level"
+        ? "selected destination current Port-MIS congestion level"
         : "ETA가 포함된 Port-MIS congestion forecast bucket 우선 사용",
       "대기 연료 소모율: backend/data/energy getWaitingFuelKgPerHour()",
       "CO2 감축량 kg = 절감 연료 kg * cfTco2PerTon",
@@ -543,6 +701,7 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
       ...(ship.mmsi ? { mmsi: ship.mmsi } : {}),
       ...(enriched.imo ? { imo: enriched.imo } : {}),
       ...(isSimulatedShip(ship) ? { source: "simulation", isSimulated: true } : {}),
+      ...(destination ? { destinationPortId: destination.id, destinationPortName: destination.name } : {}),
       status: "underway",
       distanceNm: round(distanceNm, 1),
       currentSpeedKn: round(currentSpeedKn, 1),
@@ -617,6 +776,21 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
       totalEstimatedCo2ReducedKg: 0,
     }
   );
+  const byDestination = simulationMode
+    ? Array.from(candidateByDestination.values()).map(({ destination, count }) => {
+        const destinationDecisions = decisions.filter((decision) => decision.destinationPortId === destination.id);
+        return {
+          destinationPortId: destination.id,
+          destinationPortName: destination.name,
+          candidateCount: count,
+          recommendedCount: destinationDecisions.length,
+          totalReducedWaitingMinutes: destinationDecisions.reduce((acc, decision) => acc + decision.reducedWaitingMinutes, 0),
+          totalEstimatedFuelSavedKg: destinationDecisions.reduce((acc, decision) => acc + decision.estimatedFuelSavedKg, 0),
+          totalEstimatedCo2ReducedKg: destinationDecisions.reduce((acc, decision) => acc + decision.estimatedCo2ReducedKg, 0),
+        };
+      })
+    : undefined;
+  const finalSummary = byDestination ? { ...summary, byDestination } : summary;
   const forecastFreshness: ForecastFreshness = useDashboardCurrent
     ? {
         ...forecastWindow(input.congestion.forecast),
@@ -624,7 +798,7 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
         now: now.toISOString(),
         matchedEtaBucketCount: 0,
         fallbackCount: 0,
-        reason: "시뮬레이션은 대시보드 현재 Port-MIS 혼잡도 currentLevel 기준으로 계산했습니다.",
+        reason: "시뮬레이션은 선택 도착지의 현재 Port-MIS 혼잡도 기준으로 계산했습니다.",
       }
     : buildForecastFreshness({
         forecast: input.congestion.forecast,
@@ -632,10 +806,13 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
         matchedEtaBucketCount: etaForecastMatchedCount,
         fallbackCount: currentLevelFallbackCount,
       });
-  const emptyReason = buildEmptyReason(summary, forecastFreshness, {
+  const emptyReason = buildEmptyReason(finalSummary, forecastFreshness, {
     simulationDashboardCurrent: useDashboardCurrent,
     currentLevel: input.congestion.currentLevel,
   });
+  const destinationCongestion = simulationMode
+    ? destinationCongestionSummary(input.congestion, input.regionalCongestion, portConfig)
+    : undefined;
   const dashboardCongestion = useDashboardCurrent
     ? {
         level: round(input.congestion.currentLevel ?? 0, 3),
@@ -652,7 +829,7 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
     isFallback: input.congestion.source !== "port-mis",
     basis: simulationMode
       ? useDashboardCurrent
-        ? "jit-arrival-simulation-dashboard-current-congestion"
+        ? "jit-arrival-simulation-destination-congestion"
         : "jit-arrival-simulation"
       : "jit-arrival-energy-decision",
     lastUpdated: now.toISOString(),
@@ -670,9 +847,10 @@ export function computeEnergyDecisions(input: ComputeEnergyDecisionsInput): Ener
           "energy-baseline-data",
         ],
     ...(dashboardCongestion ? { dashboardCongestion } : {}),
+    ...(destinationCongestion ? { destinationCongestion } : {}),
     forecastFreshness,
     decisions,
-    summary,
+    summary: finalSummary,
     ...(emptyReason ? { emptyReason } : {}),
     calculationNote: simulationMode
       ? "시뮬레이션 결과는 사용자가 생성한 가상 선박 기준의 추정값이며 실제 운항 지시가 아닙니다."

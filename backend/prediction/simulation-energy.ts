@@ -1,4 +1,4 @@
-import type { CongestionForecast, PortCall, PortConfig } from "../ports/port-types";
+import type { CongestionForecast, PortCall, PortConfig, RegionCongestionSeries, SimulationDestinationPortId } from "../ports/port-types";
 import { BUSAN_PORT } from "../ports/seed-port";
 import {
   computeEnergyDecisions,
@@ -20,6 +20,7 @@ export interface SimulatedShipInput {
   status: "underway";
   vesselType: SimulatedVesselType;
   grossTonnage: number;
+  destinationPortId?: SimulationDestinationPortId;
   source: "simulation";
   createdAt?: string;
 }
@@ -37,7 +38,10 @@ export interface SimulationValidation {
 
 export interface SimulationEnergyDecisionResult extends EnergyDecisionResult {
   mode: "simulation";
-  basis: "jit-arrival-simulation" | "jit-arrival-simulation-dashboard-current-congestion";
+  basis:
+    | "jit-arrival-simulation"
+    | "jit-arrival-simulation-dashboard-current-congestion"
+    | "jit-arrival-simulation-destination-congestion";
   congestionMode: EnergyDecisionCongestionMode;
   validation: SimulationValidation;
 }
@@ -46,6 +50,7 @@ export interface ComputeSimulationEnergyDecisionsInput {
   simulatedShips: unknown;
   congestion: CongestionForecast;
   portCalls?: PortCall[];
+  regionalCongestion?: RegionCongestionSeries[];
   portConfig?: PortConfig;
   now?: Date;
   congestionMode?: unknown;
@@ -67,11 +72,24 @@ function normalizeCongestionMode(value: unknown): EnergyDecisionCongestionMode {
   return value === "eta-forecast" ? "eta-forecast" : "dashboard-current";
 }
 
+function defaultDestinationPortId(portConfig: PortConfig): SimulationDestinationPortId {
+  return portConfig.simulationDestinations[0]?.id ?? "busan-north";
+}
+
+function normalizeDestinationPortId(
+  value: unknown,
+  portConfig: PortConfig
+): { destinationPortId?: SimulationDestinationPortId; invalid: boolean } {
+  if (value == null || value === "") return { destinationPortId: defaultDestinationPortId(portConfig), invalid: false };
+  const found = portConfig.simulationDestinations.find((destination) => destination.id === value);
+  return found ? { destinationPortId: found.id, invalid: false } : { invalid: true };
+}
+
 function pushIssue(issues: SimulationValidationIssue[], index: number, message: string) {
   issues.push({ index, message });
 }
 
-export function normalizeSimulatedShipsForDecision(value: unknown): {
+export function normalizeSimulatedShipsForDecision(value: unknown, portConfig: PortConfig = BUSAN_PORT): {
   ships: EnergyDecisionShipInput[];
   validation: SimulationValidation;
 } {
@@ -102,6 +120,7 @@ export function normalizeSimulatedShipsForDecision(value: unknown): {
     const sog = finiteNumber(raw.sog);
     const grossTonnage = finiteNumber(raw.grossTonnage);
     const vesselType = raw.vesselType;
+    const destination = normalizeDestinationPortId(raw.destinationPortId, portConfig);
 
     if (!id) {
       pushIssue(issues, index, "id가 없거나 비어 있습니다.");
@@ -135,6 +154,10 @@ export function normalizeSimulatedShipsForDecision(value: unknown): {
       pushIssue(issues, index, "grossTonnage는 100 이상의 숫자여야 합니다.");
       return;
     }
+    if (destination.invalid || !destination.destinationPortId) {
+      pushIssue(issues, index, "destinationPortId가 지원 범위가 아닙니다.");
+      return;
+    }
 
     ships.push({
       id,
@@ -145,6 +168,7 @@ export function normalizeSimulatedShipsForDecision(value: unknown): {
       status: "underway",
       vesselType,
       grossTonnage: Math.round(grossTonnage),
+      destinationPortId: destination.destinationPortId,
       source: "simulation",
       isSimulated: true,
     });
@@ -161,13 +185,15 @@ export function normalizeSimulatedShipsForDecision(value: unknown): {
 }
 
 export function computeSimulationEnergyDecisions(input: ComputeSimulationEnergyDecisionsInput): SimulationEnergyDecisionResult {
-  const { ships, validation } = normalizeSimulatedShipsForDecision(input.simulatedShips);
+  const portConfig = input.portConfig ?? BUSAN_PORT;
+  const { ships, validation } = normalizeSimulatedShipsForDecision(input.simulatedShips, portConfig);
   const congestionMode = normalizeCongestionMode(input.congestionMode);
   const result = computeEnergyDecisions({
     ships,
     congestion: input.congestion,
     portCalls: input.portCalls ?? [],
-    portConfig: input.portConfig ?? BUSAN_PORT,
+    regionalCongestion: input.regionalCongestion,
+    portConfig,
     now: input.now,
     mode: "simulation",
     congestionMode,
@@ -179,7 +205,7 @@ export function computeSimulationEnergyDecisions(input: ComputeSimulationEnergyD
     congestionMode,
     basis:
       congestionMode === "dashboard-current"
-        ? "jit-arrival-simulation-dashboard-current-congestion"
+        ? "jit-arrival-simulation-destination-congestion"
         : "jit-arrival-simulation",
     validation,
   };

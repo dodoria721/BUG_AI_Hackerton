@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { computeEnergyDecisions, type EnergyDecisionResult } from "../backend/prediction/energy-decision";
 import { computeSimulationEnergyDecisions } from "../backend/prediction/simulation-energy";
 import { BUSAN_PORT } from "../backend/ports/seed-port";
-import type { CongestionForecast, PortCall, Ship } from "../backend/ports/port-types";
+import type { CongestionForecast, PortCall, RegionCongestionSeries, Ship } from "../backend/ports/port-types";
 
 const now = new Date("2026-07-04T00:00:00.000Z");
 
@@ -38,6 +38,21 @@ function congestion(levelAtEta = 0.9): CongestionForecast {
       { time: "2026-07-04T05:00:00.000Z", level: 0.4, currentInPort: 120 },
     ],
   };
+}
+
+function regionalCongestion(overrides: Record<string, number> = {}): RegionCongestionSeries[] {
+  return BUSAN_PORT.congestionRegions.map((region) => ({
+    id: region.id,
+    name: region.name,
+    currentLevel: overrides[region.id] ?? 0.2,
+    forecast: [],
+    arrivals: 0,
+    departures: 0,
+    activityWindowHours: 24,
+    currentVessels: 0,
+    aisSeparable: region.aisSeparable,
+    source: "test-regional",
+  }));
 }
 
 const portCalls: PortCall[] = [
@@ -181,6 +196,8 @@ assert.equal(simulationResult.summary.recommendedCount, 1);
 assert.equal(simulationResult.decisions[0].shipId, "sim-001");
 assert.equal(simulationResult.decisions[0].source, "simulation");
 assert.equal(simulationResult.decisions[0].isSimulated, true);
+assert.equal(simulationResult.decisions[0].destinationPortId, "busan-north");
+assert.equal(simulationResult.decisions[0].destinationPortName, "부산항 북항");
 assert.equal(simulationResult.decisions[0].grossTonnage, 80000);
 assert.equal(simulationResult.decisions[0].normalizedVesselType, "container");
 assert.equal(simulationResult.decisions[0].fuelConsumptionKgPerHour, 360);
@@ -201,6 +218,7 @@ const dashboardCurrentSimulationResult = computeSimulationEnergyDecisions({
     },
   ],
   congestion: { ...congestion(0.2), currentLevel: 0.9, forecast: [] },
+  regionalCongestion: regionalCongestion({ busan: 0.9 }),
   portCalls: [],
   portConfig: BUSAN_PORT,
   now,
@@ -208,15 +226,15 @@ const dashboardCurrentSimulationResult = computeSimulationEnergyDecisions({
 
 assert.equal(dashboardCurrentSimulationResult.mode, "simulation");
 assert.equal(dashboardCurrentSimulationResult.congestionMode, "dashboard-current");
-assert.equal(dashboardCurrentSimulationResult.basis, "jit-arrival-simulation-dashboard-current-congestion");
-assert.equal(dashboardCurrentSimulationResult.dashboardCongestion?.level, 0.9);
-assert.equal(dashboardCurrentSimulationResult.dashboardCongestion?.status, "혼잡");
+assert.equal(dashboardCurrentSimulationResult.basis, "jit-arrival-simulation-destination-congestion");
+assert.equal(dashboardCurrentSimulationResult.destinationCongestion?.["busan-north"].level, 0.9);
+assert.equal(dashboardCurrentSimulationResult.destinationCongestion?.["busan-north"].status, "혼잡");
 assert.equal(dashboardCurrentSimulationResult.summary.candidateCount, 1);
 assert.equal(dashboardCurrentSimulationResult.summary.recommendedCount, 1);
 assert.equal(dashboardCurrentSimulationResult.summary.etaForecastMatchedCount, 0);
 assert.equal(dashboardCurrentSimulationResult.summary.currentLevelFallbackCount, 0);
 assert.equal(dashboardCurrentSimulationResult.forecastFreshness.isStale, false);
-assert.equal(dashboardCurrentSimulationResult.decisions[0].congestionBasis, "dashboard-current-level");
+assert.equal(dashboardCurrentSimulationResult.decisions[0].congestionBasis, "destination-current-level");
 assert.equal(dashboardCurrentSimulationResult.decisions[0].currentCongestionLevel, 0.9);
 assert.ok(dashboardCurrentSimulationResult.decisions[0].distanceNm < 10);
 assert.ok(
@@ -224,6 +242,57 @@ assert.ok(
     reason.includes("부산항과 가까운 위치라 JIT 감속 효과가 제한적일 수 있습니다.")
   )
 );
+assert.equal(dashboardCurrentSimulationResult.summary.byDestination?.[0].destinationPortId, "busan-north");
+
+const multiDestinationResult = computeSimulationEnergyDecisions({
+  simulatedShips: [
+    {
+      id: "sim-new",
+      name: "SIM NEW PORT",
+      lat: 35.05,
+      lng: 128.82,
+      sog: 12,
+      status: "underway",
+      vesselType: "container",
+      grossTonnage: 80000,
+      destinationPortId: "busan-new",
+      source: "simulation",
+    },
+    {
+      id: "sim-gamcheon",
+      name: "SIM GAMCHEON",
+      lat: 35.05,
+      lng: 128.82,
+      sog: 12,
+      status: "underway",
+      vesselType: "container",
+      grossTonnage: 80000,
+      destinationPortId: "gamcheon",
+      source: "simulation",
+    },
+  ],
+  congestion: { ...congestion(0.2), currentLevel: 0.2, forecast: [] },
+  regionalCongestion: regionalCongestion({ sinhang: 0.9, gamcheon: 0.6 }),
+  portCalls: [],
+  portConfig: BUSAN_PORT,
+  now,
+});
+
+assert.equal(multiDestinationResult.summary.candidateCount, 2);
+assert.equal(multiDestinationResult.decisions.length, 2);
+const newPortDecision = multiDestinationResult.decisions.find((item) => item.shipId === "sim-new");
+const gamcheonDecision = multiDestinationResult.decisions.find((item) => item.shipId === "sim-gamcheon");
+assert.ok(newPortDecision);
+assert.ok(gamcheonDecision);
+assert.equal(newPortDecision.destinationPortId, "busan-new");
+assert.equal(newPortDecision.destinationPortName, "부산신항");
+assert.equal(newPortDecision.congestionBasis, "destination-current-level");
+assert.equal(newPortDecision.currentCongestionLevel, 0.9);
+assert.equal(gamcheonDecision.destinationPortId, "gamcheon");
+assert.equal(gamcheonDecision.destinationPortName, "감천항");
+assert.equal(gamcheonDecision.currentCongestionLevel, 0.6);
+assert.notEqual(newPortDecision.distanceNm, gamcheonDecision.distanceNm);
+assert.equal(multiDestinationResult.summary.byDestination?.length, 2);
 
 const emptySimulationResult = computeSimulationEnergyDecisions({
   simulatedShips: [],
@@ -260,5 +329,29 @@ const invalidSimulationResult = computeSimulationEnergyDecisions({
 assert.equal(invalidSimulationResult.validation.acceptedCount, 0);
 assert.equal(invalidSimulationResult.validation.rejectedCount, 1);
 assert.equal(invalidSimulationResult.summary.recommendedCount, 0);
+
+const invalidDestinationResult = computeSimulationEnergyDecisions({
+  simulatedShips: [
+    {
+      id: "bad-destination",
+      name: "BAD DESTINATION",
+      lat: 35.05,
+      lng: 128.9,
+      sog: 12,
+      status: "underway",
+      vesselType: "container",
+      grossTonnage: 80000,
+      destinationPortId: "unknown-port",
+      source: "simulation",
+    },
+  ],
+  congestion: congestion(0.9),
+  portCalls: [],
+  portConfig: BUSAN_PORT,
+  now,
+});
+
+assert.equal(invalidDestinationResult.validation.acceptedCount, 0);
+assert.equal(invalidDestinationResult.validation.rejectedCount, 1);
 
 console.log("energy decision validation passed");

@@ -21,6 +21,8 @@ interface SimulationDecision {
   shipName: string;
   source?: "simulation";
   isSimulated?: boolean;
+  destinationPortId?: string;
+  destinationPortName?: string;
   distanceNm: number;
   currentSpeedKn: number;
   recommendedSpeedKn: number;
@@ -53,6 +55,7 @@ interface SimulationEnergyResult {
     source?: string;
     basis?: string;
   };
+  destinationCongestion?: Record<string, { name: string; level: number; status: string; source?: string; basis: string }>;
   decisions: SimulationDecision[];
   summary: {
     candidateCount: number;
@@ -60,6 +63,15 @@ interface SimulationEnergyResult {
     totalReducedWaitingMinutes: number;
     totalEstimatedFuelSavedKg: number;
     totalEstimatedCo2ReducedKg: number;
+    byDestination?: Array<{
+      destinationPortId: string;
+      destinationPortName: string;
+      candidateCount: number;
+      recommendedCount: number;
+      totalReducedWaitingMinutes: number;
+      totalEstimatedFuelSavedKg: number;
+      totalEstimatedCo2ReducedKg: number;
+    }>;
   };
   emptyReason?: {
     title: string;
@@ -106,6 +118,18 @@ function formatDateTime(iso: string): string {
 
 function formatKg(value: number): string {
   return `${Math.round(value).toLocaleString("ko-KR")}kg`;
+}
+
+function simulationDestinationName(destinationPortId: string | undefined): string {
+  return BUSAN_PORT.simulationDestinations.find((destination) => destination.id === destinationPortId)?.name ?? "부산항 북항";
+}
+
+function destinationBasisLabel(basis: string): string {
+  if (basis === "destination-current-level") return "선택 도착지 현재 혼잡도";
+  if (basis === "destination-eta-forecast-bucket") return "선택 도착지 ETA 시간대 혼잡도";
+  if (basis === "global-current-level-fallback") return "전체 혼잡도 fallback";
+  if (basis === "dashboard-current-level") return "dashboard-current";
+  return basis;
 }
 
 function SimBadge() {
@@ -325,7 +349,7 @@ export default function SimulationPage() {
               <div>
                 <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900 }}>JIT 계산</h2>
                 <p style={{ margin: "7px 0 0", color: muted, fontSize: 11.5, lineHeight: 1.45 }}>
-                  생성한 가상 선박을 현재 Port-MIS 혼잡도 forecast와 결합해 JIT 감속 권고를 계산합니다.
+                  생성한 가상 선박을 선택 도착지의 현재 Port-MIS 혼잡도와 결합해 JIT 감속 권고를 계산합니다.
                 </p>
               </div>
               <button
@@ -372,6 +396,7 @@ export default function SimulationPage() {
                     const decision = decisionsByShipId.get(ship.id);
                     const stateLabel = jitLoading ? "계산 중" : decision ? "JIT 권고" : jitResult ? "권고 없음" : "계산 대기";
                     const stateColor = decision ? "#bfdbfe" : jitResult ? "#cbd5e1" : "#8aa0c8";
+                    const destinationName = simulationDestinationName(ship.destinationPortId);
                     return (
                   <article
                     key={ship.id}
@@ -408,6 +433,7 @@ export default function SimulationPage() {
                     </div>
                     <div style={{ marginTop: 8, color: stateColor, fontSize: 11, fontWeight: 900 }}>{stateLabel}</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 10px", marginTop: 10, color: "#cbd5e1", fontSize: 12 }}>
+                      <span style={{ gridColumn: "1 / -1" }}>도착지 {destinationName}</span>
                       <span>속도 {ship.sog}kn</span>
                       <span>{SIMULATED_VESSEL_TYPE_LABELS[ship.vesselType]}</span>
                       <span>GT {formatGt(ship.grossTonnage)}</span>
@@ -438,12 +464,15 @@ export default function SimulationPage() {
                 <strong style={{ color: text }}>현재 생성된 가상 선박 기준으로 JIT 감속 권고가 없습니다.</strong>
                 <br />
                 {jitResult.emptyReason?.description}
-                {jitResult.dashboardCongestion && (
-                  <div style={{ marginTop: 10, color: muted }}>
-                    현재 혼잡도 {Math.round(jitResult.dashboardCongestion.level * 100)}% · 후보 {jitResult.summary.candidateCount}척 · 권고{" "}
-                    {jitResult.summary.recommendedCount}척
-                  </div>
-                )}
+                {(jitResult.summary.byDestination ?? []).map((item) => {
+                  const congestion = jitResult.destinationCongestion?.[item.destinationPortId];
+                  return (
+                    <div key={item.destinationPortId} style={{ marginTop: 10, color: muted }}>
+                      {item.destinationPortName} 현재 혼잡도 {congestion ? Math.round(congestion.level * 100) : "-"}% · 후보 {item.candidateCount}척 · 권고{" "}
+                      {item.recommendedCount}척
+                    </div>
+                  );
+                })}
                 {jitResult.emptyReason?.suggestions?.slice(0, 2).map((suggestion) => (
                   <div key={suggestion} style={{ marginTop: 6, color: muted }}>
                     {suggestion}
@@ -452,15 +481,16 @@ export default function SimulationPage() {
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%", overflowY: "auto", paddingRight: 2 }}>
-                {jitResult.dashboardCongestion && (
+                {jitResult.summary.byDestination?.length ? (
                   <div style={{ borderRadius: 8, border: "1px solid rgba(56,189,248,.18)", background: "rgba(56,189,248,.08)", padding: 10, color: "#bae6fd", fontSize: 12, lineHeight: 1.45 }}>
-                    계산 기준: 대시보드 현재 Port-MIS 혼잡도 {Math.round(jitResult.dashboardCongestion.level * 100)}%
-                    {" · "}
-                    {jitResult.dashboardCongestion.status}
+                    계산 기준: 선택 도착지의 현재 Port-MIS 혼잡도
                     <br />
-                    현재 /dashboard와 동일한 Port-MIS 혼잡도 기준으로 가상 선박의 JIT 감속 권고를 계산했습니다.
+                    {(jitResult.summary.byDestination ?? []).map((item) => {
+                      const congestion = jitResult.destinationCongestion?.[item.destinationPortId];
+                      return `${item.destinationPortName} ${congestion ? Math.round(congestion.level * 100) : "-"}%${congestion ? ` · ${congestion.status}` : ""}`;
+                    }).join(" / ")}
                   </div>
-                )}
+                ) : null}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                   <div style={{ borderRadius: 8, background: "rgba(56,189,248,.08)", padding: 9 }}>
                     <div style={{ color: muted, fontSize: 10, fontWeight: 800 }}>대기 감소</div>
@@ -486,9 +516,11 @@ export default function SimulationPage() {
                       <span style={{ color: "#bae6fd", fontSize: 10.5, fontWeight: 900 }}>{decision.confidence}</span>
                     </div>
                     <p style={{ margin: "9px 0 0", color: "#cbd5e1", fontSize: 11.5, lineHeight: 1.5 }}>
-                      현재 속도로 접근하면 혼잡 시간대 도착이 예상됩니다. 권고 속도로 감속하면 대기시간 일부를 항해시간으로 흡수할 수 있습니다.
+                      {decision.destinationPortName ?? simulationDestinationName(decision.destinationPortId)} 현재 혼잡도 기준으로 계산했습니다. 권고 속도로 감속하면 대기시간 일부를 항해시간으로 흡수할 수 있습니다.
                     </p>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 10px", marginTop: 10, color: "#cbd5e1", fontSize: 12 }}>
+                      <span>도착지 {decision.destinationPortName ?? simulationDestinationName(decision.destinationPortId)}</span>
+                      <span>거리 {decision.distanceNm}NM</span>
                       <span>현재 속도 {decision.currentSpeedKn}kn</span>
                       <span>권고 속도 {decision.recommendedSpeedKn}kn</span>
                       <span>현재 ETA {formatDateTime(decision.currentEta)}</span>
@@ -499,7 +531,7 @@ export default function SimulationPage() {
                       <span>잔여 대기 {decision.optimizedWaitingMinutes}분</span>
                       <span>연료 절감 {formatKg(decision.estimatedFuelSavedKg)}</span>
                       <span>CO₂ 감축 {formatKg(decision.estimatedCo2ReducedKg)}</span>
-                      <span>계산 기준 {decision.congestionBasis === "dashboard-current-level" ? "dashboard-current" : decision.congestionBasis}</span>
+                      <span>혼잡도 기준 {destinationBasisLabel(decision.congestionBasis)}</span>
                     </div>
                     {decision.reasons?.slice(0, 2).map((reason) => (
                       <div key={reason} style={{ marginTop: 7, color: muted, fontSize: 10.5, lineHeight: 1.35 }}>
@@ -510,7 +542,7 @@ export default function SimulationPage() {
                 ))}
 
                 <div style={{ color: "#fde68a", fontSize: 11.5, lineHeight: 1.5 }}>
-                  이 결과는 사용자가 생성한 가상 선박과 현재 대시보드 혼잡도를 결합한 시뮬레이션 추정값이며 실제 운항 지시가 아닙니다.
+                  이 결과는 사용자가 생성한 가상 선박과 선택 도착지의 현재 혼잡도를 결합한 시뮬레이션 추정값이며 실제 운항 지시가 아닙니다.
                 </div>
               </div>
             )}

@@ -1,6 +1,9 @@
+import type { SimulationDestinationPortId } from "@/backend/ports/port-types";
+
 export const SIMULATED_VESSEL_TYPES = ["container", "bulk", "tanker", "lng", "generalCargo"] as const;
 
 export type SimulatedVesselType = (typeof SIMULATED_VESSEL_TYPES)[number];
+export type { SimulationDestinationPortId };
 
 export interface SimulatedShip {
   id: string;
@@ -11,13 +14,14 @@ export interface SimulatedShip {
   status: "underway";
   vesselType: SimulatedVesselType;
   grossTonnage: number;
+  destinationPortId: SimulationDestinationPortId;
   source: "simulation";
   createdAt: string;
 }
 
 export type NewSimulatedShipInput = Pick<
   SimulatedShip,
-  "name" | "lat" | "lng" | "sog" | "vesselType" | "grossTonnage"
+  "name" | "lat" | "lng" | "sog" | "vesselType" | "grossTonnage" | "destinationPortId"
 >;
 
 export const SIMULATED_VESSEL_TYPE_LABELS: Record<SimulatedVesselType, string> = {

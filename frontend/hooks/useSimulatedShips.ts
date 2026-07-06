@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BUSAN_PORT } from "@/backend/ports/seed-port";
 import type { NewSimulatedShipInput, SimulatedShip } from "@/frontend/types/simulation";
 import { isSimulatedVesselType } from "@/frontend/types/simulation";
 
@@ -17,21 +18,47 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isSimulatedShip(value: unknown): value is SimulatedShip {
-  if (!value || typeof value !== "object") return false;
+function defaultDestinationPortId(): SimulatedShip["destinationPortId"] {
+  return BUSAN_PORT.simulationDestinations[0]?.id ?? "busan-north";
+}
+
+function normalizeDestinationPortId(value: unknown): SimulatedShip["destinationPortId"] {
+  return BUSAN_PORT.simulationDestinations.some((destination) => destination.id === value)
+    ? (value as SimulatedShip["destinationPortId"])
+    : defaultDestinationPortId();
+}
+
+function normalizeSimulatedShip(value: unknown): SimulatedShip | null {
+  if (!value || typeof value !== "object") return null;
   const ship = value as Record<string, unknown>;
-  return (
-    typeof ship.id === "string" &&
-    typeof ship.name === "string" &&
-    isFiniteNumber(ship.lat) &&
-    isFiniteNumber(ship.lng) &&
-    isFiniteNumber(ship.sog) &&
-    ship.status === "underway" &&
-    isSimulatedVesselType(ship.vesselType) &&
-    isFiniteNumber(ship.grossTonnage) &&
-    ship.source === "simulation" &&
-    typeof ship.createdAt === "string"
-  );
+  if (
+    typeof ship.id !== "string" ||
+    typeof ship.name !== "string" ||
+    !isFiniteNumber(ship.lat) ||
+    !isFiniteNumber(ship.lng) ||
+    !isFiniteNumber(ship.sog) ||
+    ship.status !== "underway" ||
+    !isSimulatedVesselType(ship.vesselType) ||
+    !isFiniteNumber(ship.grossTonnage) ||
+    ship.source !== "simulation" ||
+    typeof ship.createdAt !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    id: ship.id,
+    name: ship.name,
+    lat: ship.lat,
+    lng: ship.lng,
+    sog: ship.sog,
+    status: "underway",
+    vesselType: ship.vesselType,
+    grossTonnage: ship.grossTonnage,
+    destinationPortId: normalizeDestinationPortId(ship.destinationPortId),
+    source: "simulation",
+    createdAt: ship.createdAt,
+  };
 }
 
 function parseStoredShips(raw: string | null): SimulatedShip[] {
@@ -39,7 +66,7 @@ function parseStoredShips(raw: string | null): SimulatedShip[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isSimulatedShip);
+    return parsed.map(normalizeSimulatedShip).filter((ship): ship is SimulatedShip => Boolean(ship));
   } catch {
     return [];
   }
