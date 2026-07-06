@@ -1,0 +1,10 @@
+﻿fuel_type,fuel_name_ko,fuel_name_en,cf_tco2_per_ton,lcv_kj_per_kg,carbon_content,note
+MDO_MGO,디젤/경유,Diesel/Gas Oil (MDO/MGO),3.206,42700,0.8744,
+LFO,저유황유,Light Fuel Oil (LFO),3.151,41200,0.8594,증류유계 ULSFO(0.1%S)는 통상 LFO로 분류
+HFO,고유황 중유,Heavy Fuel Oil (HFO),3.114,40200,0.8493,잔사유계 VLSFO(0.5%S)도 실무상 HFO 계수 적용
+LPG_PROPANE,LPG(프로판),LPG (Propane),3.000,46300,0.8182,
+LPG_BUTANE,LPG(부탄),LPG (Butane),3.030,45700,0.8264,
+ETHANE,에탄,Ethane,2.927,46400,0.7989,
+LNG,액화천연가스,Liquefied Natural Gas (LNG),2.750,48000,0.7500,연소 기준. FuelEU는 메탄 슬립 포함 WtW 별도 계수 필요
+METHANOL,메탄올,Methanol,1.375,19900,0.3750,LCV가 낮아 동일 에너지당 연료량 약 2배 필요
+ETHANOL,에탄올,Ethanol,1.913,26800,0.5217,

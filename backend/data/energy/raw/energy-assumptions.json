@@ -1,0 +1,122 @@
+{
+  "purpose": "AI 기반 에너지 절감/탄소 감축 의사결정 기능에서 백엔드 계산에 사용할 내부 기준값",
+  "calculationPrinciple": "숫자 계산은 TypeScript 백엔드에서 수행하고, OpenAI는 계산 결과를 운영자용 권고 문장으로 설명한다.",
+  "congestionWaitingMinutes": [
+    {
+      "minRawLevel": 0.0,
+      "maxRawLevelExclusive": 0.3,
+      "status": "원활",
+      "waitingMinutes": 5
+    },
+    {
+      "minRawLevel": 0.3,
+      "maxRawLevelExclusive": 0.6,
+      "status": "보통",
+      "waitingMinutes": 15
+    },
+    {
+      "minRawLevel": 0.6,
+      "maxRawLevelExclusive": 0.85,
+      "status": "주의",
+      "waitingMinutes": 35
+    },
+    {
+      "minRawLevel": 0.85,
+      "maxRawLevelExclusive": 1.0,
+      "status": "혼잡",
+      "waitingMinutes": 60
+    },
+    {
+      "minRawLevel": 1.0,
+      "maxRawLevelExclusive": null,
+      "status": "포화",
+      "waitingMinutes": 90
+    }
+  ],
+  "shipSizeClasses": [
+    {
+      "sizeClass": "small",
+      "minGt": 0,
+      "maxGtExclusive": 5000
+    },
+    {
+      "sizeClass": "medium",
+      "minGt": 5000,
+      "maxGtExclusive": 30000
+    },
+    {
+      "sizeClass": "large",
+      "minGt": 30000,
+      "maxGtExclusive": 80000
+    },
+    {
+      "sizeClass": "veryLarge",
+      "minGt": 80000,
+      "maxGtExclusive": null
+    },
+    {
+      "sizeClass": "unknown",
+      "condition": "grossTonnage가 없거나 파싱 실패"
+    }
+  ],
+  "waitingFuelKgPerHourBySize": {
+    "small": 40,
+    "medium": 90,
+    "large": 180,
+    "veryLarge": 300,
+    "unknown": 80
+  },
+  "shipTypeFuelMultiplier": {
+    "container": 1.2,
+    "bulk": 1.0,
+    "tanker": 1.1,
+    "lng": 1.05,
+    "reefer": 1.15,
+    "cruise": 1.3,
+    "generalCargo": 1.0,
+    "unknown": 1.0
+  },
+  "fuelTypeInference": [
+    {
+      "condition": "선종 문자열에 LNG 포함",
+      "fuelType": "LNG",
+      "confidence": "medium"
+    },
+    {
+      "condition": "연안선/소형선 또는 GT < 5000",
+      "fuelType": "MDO_MGO",
+      "confidence": "low"
+    },
+    {
+      "condition": "컨테이너선/벌크선/유조선/대형선",
+      "fuelType": "HFO",
+      "confidence": "low"
+    },
+    {
+      "condition": "알 수 없음",
+      "fuelType": "HFO",
+      "confidence": "low",
+      "note": "연료 종류 미확인 시 HFO 기준 추정"
+    }
+  ],
+  "jitSpeedAdvisoryConstraints": {
+    "candidateStatus": "underway",
+    "minSogKn": 3,
+    "minDistanceNm": 10,
+    "maxDistanceNm": 600,
+    "recommendationWindowHours": 6,
+    "minRecommendedSpeedKn": 8,
+    "onlyRecommendWhenRecommendedSpeedLowerThanCurrent": true
+  },
+  "portCapacityRule": {
+    "defaultCapacityColumn": "시간당콜_혼합800TEU",
+    "largeContainerAlternativeColumn": "시간당콜_대형2500TEU",
+    "note": "MVP에서는 시간당콜_혼합800TEU를 기본 혼잡도 분모로 사용한다. 항만 고유 설정은 backend/ports/seed-port.ts에 반영한다."
+  },
+  "emissionFormula": {
+    "savedFuelKg": "reducedWaitingHours * waitingFuelKgPerHour * shipTypeMultiplier",
+    "savedCo2Kg": "savedFuelKg * cf_tco2_per_ton",
+    "note": "cf_tco2_per_ton은 ton CO2/ton fuel이므로 kg 기준에서도 같은 비율로 곱할 수 있다."
+  },
+  "disclaimer": "연료 절감량과 CO₂ 감축량은 선박 크기, 속도, 혼잡도 기반 추정값이다. 실제 운항 판단은 항만 운영자와 선박 운항자가 결정한다."
+}

@@ -105,6 +105,14 @@ export const BUSAN_PORT: PortConfig = {
     containerBerths: 40, // 북항 17 + 신항 23 (busan-throughput 참조)
     totalBerths: 40,
     dwellMedianHours: 20.7,
+    containerHourlyCapacity: {
+      source: "codex_energy_data_pack_utf8_fixed/data/port-hourly-capacity.csv",
+      defaultBasis: "mixed-800-teu",
+      mixedCallsPerHour: 3.203,
+      largeCallsPerHour: 1.025,
+      teuPerHour: 2562.4,
+      note: "에너지 절감 의사결정용 컨테이너 처리능력 요약값. 기존 Port-MIS 혼잡도는 arrivalCapacityPerHour와 portWide 재항 분포를 계속 사용한다.",
+    },
     // 혼잡도별 재항시간 실측: 컨테이너 16→20h, 탱커 20→27h. P75 꼬리로 대기 추정.
     wait: {
       container: { freeDwellHours: 16, congestedExtraHours: 8, onsetLevel: 0.7 },

@@ -90,6 +90,14 @@ export interface PortCallCapacity {
   containerBerths: number; // 물리 컨테이너 선석 수(검증: container.p50 ≈ berths)
   totalBerths: number; // 부산항 전체 컨테이너 선석(북항+신항)
   dwellMedianHours: number; // 전체 재항시간 중앙값
+  containerHourlyCapacity?: {
+    source: string;
+    defaultBasis: "mixed-800-teu" | "large-2500-teu";
+    mixedCallsPerHour: number;
+    largeCallsPerHour: number;
+    teuPerHour: number;
+    note?: string;
+  };
   wait: { container: WaitCalibration; tanker: WaitCalibration; default: WaitCalibration };
   hourOfDayFactor: number[]; // [0..23] 평시=1.0 대비 계수
   monthFactor: number[]; // [0..11] 평시=1.0 대비 계수

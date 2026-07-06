@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "ingest:ais": "tsx --env-file=.env.local backend/ais/ingest-aisstream.ts",
-    "enrich:portmis": "tsx --env-file=.env.local backend/portmis/run-enrich.ts"
+    "enrich:portmis": "tsx --env-file=.env.local backend/portmis/run-enrich.ts",
+    "validate:energy-data": "tsx scripts/validate-energy-data.ts",
+    "validate:energy-decisions": "tsx scripts/validate-energy-decisions.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.0",
@@ -31,6 +33,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/ws": "^8.5.13",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.19",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5"
