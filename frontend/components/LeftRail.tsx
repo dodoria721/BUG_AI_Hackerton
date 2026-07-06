@@ -11,6 +11,7 @@ const border = "1px solid rgba(120,160,255,0.14)";
 export const RAIL_ITEMS: { icon: string; label: string; href?: string }[] = [
   { icon: "🗺️", label: "관제 지도", href: "/dashboard" },
   { icon: "🚢", label: "선박 모니터링", href: "/vessel" },
+  { icon: "S", label: "시뮬레이션", href: "/simulation" },
   { icon: "⚓", label: "선석 대기" },
   { icon: "📊", label: "통계" },
   { icon: "⚙️", label: "설정" },
