@@ -1,9 +1,12 @@
 // 해수부 연안AIS 통계(WFS) → 혼잡도 곡선. fetch(mof-ais-stats) + 정규화(computeAisStatsCongestion)를
 // 묶어, /api/congestion 이 Port-MIS 다음 폴백으로 쓸 수 있게 CongestionForecast | null 을 준다.
 //
-// 이 통계는 연 단위(offeryear) 과거 집계라 "오늘 실시간"이 아니다. 그래서 조회 날짜를 고른다:
-//   1) MOF_AIS_STATS_DATE(YYYYMMDD) 환경변수가 있으면 그 날짜
-//   2) 없으면 최근 몇 개 연도의 "오늘과 같은 월/일"을 순서대로 시도(가장 최근 가용 연도 채택)
+// 이 통계는 시간대(ship_time 0~23시)별로 당일 실시간에 가깝게 갱신된다 — 오늘 날짜(ship_dt)로
+// 조회하면 지금까지 지난 시간대가 present=true 로 채워져 온다(실측: KST 새벽이면 0~현재 시각만 존재).
+// 그래서 조회 날짜를 고른다:
+//   1) MOF_AIS_STATS_DATE(YYYYMMDD) 환경변수가 있으면 그 날짜(디버그·재현용)
+//   2) 없으면 오늘(KST)부터 과거로 며칠을 순서대로 시도(가장 최근 가용일 채택)
+// 날짜는 서버 타임존(로컬 KST vs Vercel UTC)에 흔들리지 않도록 KST 벽시계 기준으로 만든다.
 // 데이터가 있는(관측 시간대가 하나라도 있는) 첫 날짜를 쓰고, 전부 없으면 null(호출부에서 AIS 폴백).
 
 import type { BoundingBox } from "./busan-filter";
