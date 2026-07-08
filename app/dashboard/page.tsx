@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import dynamic from "next/dynamic";
-import type { CongestionForecast, PortCall, Ship } from "@/frontend/types/domain";
+import type { CongestionForecast, PortCall, RegionCongestionSeries, Ship } from "@/frontend/types/domain";
 import { BUSAN_DISPLAY_PORT, congestionDisplayColor } from "@/frontend/config/ports";
 import VesselPanel from "@/frontend/components/VesselPanel";
 import AdvisorPanel from "@/frontend/components/AdvisorPanel";
@@ -139,6 +139,7 @@ function RailButton({
 export default function DashboardPage() {
   const [ships, setShips] = useState<Ship[]>([]);
   const [congestion, setCongestion] = useState<CongestionForecast | null>(null);
+  const [regions, setRegions] = useState<RegionCongestionSeries[]>([]);
   const [portCalls, setPortCalls] = useState<PortCall[]>([]);
   const [selectedMmsi, setSelectedMmsi] = useState<string | null>(null);
   const [selectedVessel, setSelectedVessel] = useState<string | null>(null);
@@ -166,15 +167,17 @@ export default function DashboardPage() {
   useEffect(() => {
     let active = true;
     async function load() {
-      const [s, cg, pc] = await Promise.all([
+      const [s, cg, pc, rg] = await Promise.all([
         fetch("/api/ships").then((r) => r.json()),
         fetch("/api/congestion").then((r) => r.json()),
         fetch("/api/port-calls").then((r) => r.json()),
+        fetch("/api/congestion/regions").then((r) => r.json()),
       ]);
       if (!active) return;
       setShips(Array.isArray(s) ? s : []);
       setCongestion(cg && cg.forecast ? cg : null);
       setPortCalls(Array.isArray(pc) ? pc : []);
+      setRegions(Array.isArray(rg) ? rg : []);
     }
     load();
     const timer = setInterval(load, 30_000);
@@ -206,7 +209,7 @@ export default function DashboardPage() {
     <div style={{ position: "fixed", inset: 0, background: "#070c17", overflow: "hidden", fontFamily: "Pretendard, system-ui, sans-serif" }}>
       {/* 배경 지도 */}
       <div style={{ position: "absolute", inset: 0 }}>
-        <ShipMap ships={shownShips} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} portCalls={portCalls} basemapId={basemapId} />
+        <ShipMap ships={shownShips} selectedMmsi={selectedMmsi} onSelect={setSelectedMmsi} regions={regions} basemapId={basemapId} />
       </div>
       {/* 다크 무드 틴트 (지도 클릭 방해 안 함) */}
       <div
