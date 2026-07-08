@@ -5,10 +5,13 @@ import { useMemo, useState, type CSSProperties } from "react";
 import { BUSAN_DISPLAY_PORT, SIMULATION_DESTINATION_PORTS } from "@/frontend/config/ports";
 import LeftRail from "@/frontend/components/LeftRail";
 import LiveShipImportModal from "@/frontend/components/simulation/LiveShipImportModal";
+import RouteScenarioResults from "@/frontend/components/simulation/RouteScenarioResults";
 import SimulatedShipModal from "@/frontend/components/SimulatedShipModal";
+import { useRouteScenarios } from "@/frontend/hooks/useRouteScenarios";
 import { useSimulatedShips } from "@/frontend/hooks/useSimulatedShips";
 import { useSimulationJit } from "@/frontend/hooks/useSimulationJit";
 import type { EnergyDecision } from "@/frontend/types/energy-decision";
+import type { RouteScenarioMapOverlay } from "@/frontend/types/route-scenario";
 import type { NewSimulatedShipInput, ScenarioShipSource, SimulatedShip } from "@/frontend/types/simulation";
 import { SIMULATED_VESSEL_TYPE_LABELS } from "@/frontend/types/simulation";
 
@@ -118,6 +121,14 @@ export default function SimulationPage() {
     runJitSimulation: requestJitSimulation,
     resetSimulationJit,
   } = useSimulationJit();
+  const {
+    result: routeResult,
+    loading: routeLoading,
+    error: routeError,
+    notice: routeNotice,
+    calculateRouteScenarios,
+    resetRouteScenarios,
+  } = useRouteScenarios();
 
   const defaultName = useMemo(() => nextDefaultName(simulatedShips), [simulatedShips]);
   const decisionsByShipId = useMemo(() => {
@@ -127,27 +138,51 @@ export default function SimulationPage() {
     });
     return map;
   }, [jitResult]);
+  const routeOverlays = useMemo<RouteScenarioMapOverlay[]>(() => {
+    if (!routeResult) return [];
+    return routeResult.results.flatMap((shipResult) =>
+      shipResult.routeScenarios
+        .filter((scenario) => scenario.routePolyline.points.length >= 2)
+        .map((scenario) => ({
+          shipId: shipResult.shipId ?? shipResult.shipName,
+          routeId: scenario.routeId,
+          routeName: scenario.routeName,
+          isRecommended: scenario.isRecommended,
+          points: scenario.routePolyline.points,
+          distanceNm: scenario.distanceNm,
+          eta: scenario.eta,
+          score: scenario.score,
+        }))
+    );
+  }, [routeResult]);
 
   function createShip(input: NewSimulatedShipInput) {
     addSimulatedShip(input);
     setPendingPosition(null);
     setLiveImportOpen(false);
     resetSimulationJit();
+    resetRouteScenarios();
   }
 
   function removeShip(id: string) {
     removeSimulatedShip(id);
     resetSimulationJit();
+    resetRouteScenarios();
   }
 
   function clearAll() {
     if (simulatedShips.length === 0) return;
     clearSimulatedShips();
     resetSimulationJit();
+    resetRouteScenarios();
   }
 
   async function runJitSimulation() {
     await requestJitSimulation(simulatedShips);
+  }
+
+  async function runRouteScenarios() {
+    await calculateRouteScenarios(simulatedShips);
   }
 
   const shellStyle: CSSProperties = {
@@ -165,7 +200,7 @@ export default function SimulationPage() {
 
       <div style={{ position: "absolute", inset: "16px 16px 16px 84px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 360px", gap: 14 }}>
         <main style={{ position: "relative", minWidth: 0, border, borderRadius: 14, overflow: "hidden", background: "#0b1220" }}>
-          <SimulationMap ships={simulatedShips} simulationMode={simulationMode} onMapContextMenu={setPendingPosition} />
+          <SimulationMap ships={simulatedShips} simulationMode={simulationMode} onMapContextMenu={setPendingPosition} routeOverlays={routeOverlays} />
 
           <section
             style={{
@@ -221,7 +256,7 @@ export default function SimulationPage() {
           </section>
         </main>
 
-        <aside style={{ display: "flex", flexDirection: "column", minHeight: 0, gap: 12, overflow: "hidden" }}>
+        <aside style={{ display: "flex", flexDirection: "column", minHeight: 0, gap: 12, overflowY: "auto", paddingRight: 2 }}>
           <section style={{ padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
               <div>
@@ -310,6 +345,43 @@ export default function SimulationPage() {
             )}
           </section>
 
+          <section style={{ padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900 }}>친환경 입항 경로 추천</h2>
+                <p style={{ margin: "7px 0 0", color: muted, fontSize: 11.5, lineHeight: 1.45 }}>
+                  선택 도착지의 사전 정의 접근 경로 후보를 거리·혼잡도·예상 대기·연료·CO₂ 기준으로 비교합니다. JIT는 감속 권고, 경로 추천은 접근 경로 후보 비교입니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={runRouteScenarios}
+                disabled={routeLoading}
+                style={{
+                  flex: "none",
+                  height: 38,
+                  padding: "0 13px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: routeLoading ? "#334155" : "#22c55e",
+                  color: routeLoading ? "#94a3b8" : "#052e16",
+                  fontSize: 12,
+                  fontWeight: 900,
+                  cursor: routeLoading ? "wait" : "pointer",
+                }}
+              >
+                {routeLoading ? "계산 중" : "경로 추천 계산"}
+              </button>
+            </div>
+            {routeError && <div style={{ marginTop: 10, color: "#fecaca", fontSize: 12, fontWeight: 800 }}>{routeError}</div>}
+            {routeNotice && <div style={{ marginTop: 10, color: "#fde68a", fontSize: 12, lineHeight: 1.45 }}>{routeNotice}</div>}
+            {routeResult?.validation && routeResult.validation.rejectedCount > 0 && (
+              <div style={{ marginTop: 10, color: "#fdba74", fontSize: 11.5, lineHeight: 1.45 }}>
+                입력 검증에서 {routeResult.validation.rejectedCount}척이 경로 추천 계산에서 제외되었습니다.
+              </div>
+            )}
+          </section>
+
           <section style={{ flex: "0 0 260px", minHeight: 180, padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900 }}>가상 선박 목록</h2>
@@ -382,7 +454,7 @@ export default function SimulationPage() {
             )}
           </section>
 
-          <section style={{ flex: "1 1 0", minHeight: 0, padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)", overflow: "hidden" }}>
+          <section style={{ flex: "0 0 auto", minHeight: 220, maxHeight: 520, padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)", overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900 }}>JIT 시뮬레이션 결과</h2>
               {jitResult && <span style={{ color: muted, fontSize: 10.5 }}>{formatDateTime(jitResult.lastUpdated)}</span>}
@@ -483,6 +555,14 @@ export default function SimulationPage() {
                 </div>
               </div>
             )}
+          </section>
+
+          <section style={{ flex: "0 0 auto", minHeight: 240, maxHeight: 560, padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)", overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900 }}>친환경 경로 추천 결과</h2>
+              {routeResult && <span style={{ color: muted, fontSize: 10.5 }}>{formatDateTime(routeResult.lastUpdated)}</span>}
+            </div>
+            <RouteScenarioResults result={routeResult} />
           </section>
         </aside>
       </div>

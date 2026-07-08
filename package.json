@@ -10,7 +10,8 @@
     "ingest:ais": "tsx --env-file=.env.local backend/ais/ingest-aisstream.ts",
     "enrich:portmis": "tsx --env-file=.env.local backend/portmis/run-enrich.ts",
     "validate:energy-data": "tsx scripts/validate-energy-data.ts",
-    "validate:energy-decisions": "tsx scripts/validate-energy-decisions.ts"
+    "validate:energy-decisions": "tsx scripts/validate-energy-decisions.ts",
+    "validate:route-scenarios": "tsx scripts/validate-route-scenarios.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.0",

@@ -143,6 +143,22 @@ export interface SimulationDestinationPort {
   congestionRegionId: string;
 }
 
+export interface ApproachRouteWaypoint {
+  lat: number;
+  lng: number;
+  label?: string;
+}
+
+export interface ApproachRoute {
+  id: string;
+  destinationPortId: SimulationDestinationPortId;
+  name: string;
+  shortName: string;
+  description?: string;
+  source: "manual-simulation-route";
+  waypoints: ApproachRouteWaypoint[];
+}
+
 export interface PortConfig {
   name: string;
   center: LatLon;
@@ -158,6 +174,7 @@ export interface PortConfig {
   aisStatsHourlyCapacity: number;
   congestionRegions: CongestionRegion[]; // 지역별 혼잡도 분할(부산/감천/신항 등)
   simulationDestinations: SimulationDestinationPort[]; // /simulation 가상 선박 도착지 선택지
+  approachRoutes: ApproachRoute[]; // /simulation 사전 정의 접근 경로 후보
   portCallCapacity: PortCallCapacity; // 동시 재항 용량·대기 보정(입출항 집계 실측)
 }
 

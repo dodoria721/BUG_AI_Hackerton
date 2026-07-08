@@ -67,6 +67,51 @@ body {
   to { stroke-dashoffset: -40; }
 }
 
+@keyframes sim-route-flow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -56; }
+}
+
+@keyframes sim-route-pulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+.sim-route-line-recommended {
+  animation: sim-route-flow 2.2s linear infinite;
+  filter: drop-shadow(0 0 7px rgba(94, 234, 212, 0.85)) drop-shadow(0 0 16px rgba(45, 212, 191, 0.35));
+}
+
+.sim-route-line-alternative {
+  animation: sim-route-flow 4.6s linear infinite;
+  filter: drop-shadow(0 0 5px rgba(96, 165, 250, 0.34));
+}
+
+.sim-route-line-halo {
+  filter: drop-shadow(0 0 18px rgba(45, 212, 191, 0.55));
+}
+
+.sim-route-waypoint {
+  animation: sim-route-pulse 2.4s ease-in-out infinite;
+  filter: drop-shadow(0 0 7px rgba(34, 211, 238, 0.75));
+}
+
+.sim-route-waypoint-start {
+  filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.8));
+}
+
+.sim-route-waypoint-end {
+  filter: drop-shadow(0 0 10px rgba(94, 234, 212, 0.9));
+}
+
+.sim-route-card-recommended {
+  filter: drop-shadow(0 0 8px rgba(94, 234, 212, 0.6));
+}
+
+.sim-route-card-alt {
+  animation: sim-route-flow 3.2s linear infinite;
+}
+
 .portiq { font-family: "Pretendard", system-ui, -apple-system, sans-serif; }
 .portiq ::selection { background: #c9d9ff; }
 

@@ -1,9 +1,11 @@
 "use client";
 
+import { Fragment } from "react";
 import L from "leaflet";
-import { MapContainer, Marker, Popup, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { BUSAN_DISPLAY_PORT, SIMULATION_DESTINATION_PORTS } from "@/frontend/config/ports";
+import type { RouteScenarioMapOverlay, RoutePolylinePoint } from "@/frontend/types/route-scenario";
 import type { SimulatedShip } from "@/frontend/types/simulation";
 import { SIMULATED_VESSEL_TYPE_LABELS } from "@/frontend/types/simulation";
 import { BASEMAPS } from "./basemaps";
@@ -12,6 +14,7 @@ interface SimulationMapProps {
   ships: SimulatedShip[];
   simulationMode: boolean;
   onMapContextMenu: (position: { lat: number; lng: number }) => void;
+  routeOverlays?: RouteScenarioMapOverlay[];
 }
 
 function SimulationContextMenuHandler({
@@ -74,12 +77,130 @@ const simIcon = simulatedShipIcon("SIM");
 const snapshotIcon = simulatedShipIcon("SNAP");
 const basemap = BASEMAPS.find((item) => item.id === "dark" && item.url) ?? BASEMAPS.find((item) => item.url) ?? BASEMAPS[0];
 
-export default function SimulationMap({ ships, simulationMode, onMapContextMenu }: SimulationMapProps) {
+function validOverlay(overlay: RouteScenarioMapOverlay): boolean {
+  return (
+    overlay.points.length >= 2 &&
+    overlay.points.every((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng))
+  );
+}
+
+function formatDateTime(iso?: string): string {
+  if (!iso) return "-";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function waypointKind(index: number, points: RoutePolylinePoint[]): "start" | "middle" | "end" {
+  if (index === 0) return "start";
+  if (index === points.length - 1) return "end";
+  return "middle";
+}
+
+function waypointStyle(kind: "start" | "middle" | "end"): L.PathOptions {
+  if (kind === "start") {
+    return { color: "#fef08a", weight: 2, fillColor: "#facc15", fillOpacity: 0.95, className: "sim-route-waypoint sim-route-waypoint-start" };
+  }
+  if (kind === "end") {
+    return { color: "#ccfbf1", weight: 2, fillColor: "#2dd4bf", fillOpacity: 0.95, className: "sim-route-waypoint sim-route-waypoint-end" };
+  }
+  return { color: "#99f6e4", weight: 1.5, fillColor: "#22d3ee", fillOpacity: 0.88, className: "sim-route-waypoint" };
+}
+
+export default function SimulationMap({ ships, simulationMode, onMapContextMenu, routeOverlays = [] }: SimulationMapProps) {
+  const overlays = routeOverlays.filter(validOverlay);
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", cursor: simulationMode ? "crosshair" : "default" }}>
       <MapContainer center={[BUSAN_DISPLAY_PORT.center.lat, BUSAN_DISPLAY_PORT.center.lng]} zoom={11} zoomControl={false} className="h-full w-full">
         {basemap.url && <TileLayer attribution={basemap.attribution} url={basemap.url} />}
         <SimulationContextMenuHandler enabled={simulationMode} onMapContextMenu={onMapContextMenu} />
+        {overlays.map((overlay) => {
+          const positions = overlay.points.map((point) => [point.lat, point.lng] as [number, number]);
+          const color = overlay.isRecommended ? "#5eead4" : "#60a5fa";
+          return (
+            <Fragment key={`${overlay.shipId}-${overlay.routeId}`}>
+              {overlay.isRecommended && (
+                <Polyline
+                  positions={positions}
+                  pathOptions={{
+                    color: "#2dd4bf",
+                    weight: 13,
+                    opacity: 0.16,
+                    lineCap: "round",
+                    lineJoin: "round",
+                    className: "sim-route-line sim-route-line-halo",
+                  }}
+                  interactive={false}
+                />
+              )}
+              <Polyline
+                positions={positions}
+                pathOptions={{
+                  color,
+                  weight: overlay.isRecommended ? 5 : 2.5,
+                  opacity: overlay.isRecommended ? 0.96 : 0.46,
+                  dashArray: overlay.isRecommended ? "12 16" : "4 9",
+                  lineCap: "round",
+                  lineJoin: "round",
+                  className: overlay.isRecommended
+                    ? "sim-route-line sim-route-line-recommended"
+                    : "sim-route-line sim-route-line-alternative",
+                }}
+              >
+                <Tooltip sticky>
+                  <span style={{ fontWeight: 900 }}>{overlay.isRecommended ? "추천 시뮬레이션 경로" : "후보 경로"}</span> · {overlay.routeName}
+                </Tooltip>
+                <Popup>
+                  <div className="text-sm">
+                    <p style={{ margin: "0 0 6px", fontWeight: 900, color: overlay.isRecommended ? "#0f766e" : "#2563eb", letterSpacing: ".04em" }}>
+                      {overlay.isRecommended ? "RECOMMENDED SCENARIO ROUTE" : "SCENARIO ROUTE CANDIDATE"}
+                    </p>
+                    <p style={{ margin: "3px 0", fontWeight: 800 }}>{overlay.routeName}</p>
+                    <p style={{ margin: "3px 0" }}>거리: {overlay.distanceNm ?? "-"}NM</p>
+                    <p style={{ margin: "3px 0" }}>ETA: {formatDateTime(overlay.eta)}</p>
+                    <p style={{ margin: "3px 0" }}>점수: {overlay.score ?? "-"}</p>
+                    <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 11 }}>
+                      사전 정의 접근 경로 후보를 표시한 시뮬레이션 선입니다. 실제 항해 지시가 아닙니다.
+                    </p>
+                  </div>
+                </Popup>
+              </Polyline>
+              {overlay.isRecommended && (
+                <>
+                  {overlay.points.map((point, index) => {
+                    const kind = waypointKind(index, overlay.points);
+                    return (
+                      <CircleMarker
+                        key={`${overlay.shipId}-${overlay.routeId}-${index}`}
+                        center={[point.lat, point.lng]}
+                        radius={kind === "middle" ? 4 : 6}
+                        pathOptions={waypointStyle(kind)}
+                      >
+                        <Tooltip direction="top">
+                          {kind === "start" ? "SHIP" : kind === "end" ? "PORT" : "WAYPOINT"} · {point.label ?? "시뮬레이션 경로 지점"}
+                        </Tooltip>
+                        <Popup>
+                          <div className="text-sm">
+                            <p style={{ margin: "0 0 6px", fontWeight: 900, color: "#0f766e", letterSpacing: ".04em" }}>SIMULATION ROUTE POINT</p>
+                            <p style={{ margin: "3px 0", fontWeight: 800 }}>{point.label ?? "접근 경로 지점"}</p>
+                            <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 11 }}>시뮬레이션용 접근 경로 지점입니다.</p>
+                          </div>
+                        </Popup>
+                      </CircleMarker>
+                    );
+                  })}
+                </>
+              )}
+            </Fragment>
+          );
+        })}
         {SIMULATION_DESTINATION_PORTS.map((destination) => (
           <Marker
             key={destination.id}
@@ -144,6 +265,33 @@ export default function SimulationMap({ ships, simulationMode, onMapContextMenu 
         }}
       >
         SIM 지도 · {simulationMode ? "우클릭으로 가상 선박 생성" : "생성 모드 꺼짐"}
+      </div>
+      <div
+        style={{
+          position: "absolute",
+          right: 14,
+          bottom: 14,
+          zIndex: 500,
+          width: 230,
+          padding: "10px 12px",
+          borderRadius: 8,
+          border: "1px solid rgba(120,160,255,.2)",
+          background: "linear-gradient(160deg,rgba(8,17,34,.9),rgba(13,31,74,.82))",
+          color: "#cbd5e1",
+          fontSize: 11,
+          lineHeight: 1.45,
+          boxShadow: "0 14px 38px rgba(0,0,0,.32)",
+          pointerEvents: "none",
+        }}
+      >
+        <div style={{ color: "#5eead4", fontWeight: 900, letterSpacing: ".06em", marginBottom: 7 }}>ROUTE LEGEND</div>
+        <div style={{ display: "grid", gap: 5 }}>
+          <span><b style={{ color: "#5eead4" }}>━━</b> 추천 경로</span>
+          <span><b style={{ color: "#60a5fa" }}>┄┄</b> 후보 경로</span>
+          <span><b style={{ color: "#facc15" }}>SIM</b> 시뮬레이션 선박</span>
+          <span><b style={{ color: "#38bdf8" }}>PORT</b> 도착 항만</span>
+        </div>
+        <div style={{ marginTop: 7, color: "#fde68a" }}>경로는 시뮬레이션용 단순화 접근 경로입니다.</div>
       </div>
     </div>
   );
