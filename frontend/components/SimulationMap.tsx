@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, type ReactNode, useEffect, useRef } from "react";
 import L from "leaflet";
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -98,6 +98,62 @@ function formatDateTime(iso?: string): string {
   });
 }
 
+function FlowingRoutePolyline({
+  children,
+  color,
+  isRecommended,
+  positions,
+}: {
+  children: ReactNode;
+  color: string;
+  isRecommended: boolean;
+  positions: [number, number][];
+}) {
+  const lineRef = useRef<L.Polyline>(null);
+
+  useEffect(() => {
+    if (!isRecommended) return;
+
+    let frame = 0;
+    let start = 0;
+    const dashCycle = 56;
+    const durationMs = 2200;
+
+    function tick(now: number) {
+      if (start === 0) start = now;
+      const offset = -(((now - start) / durationMs) * dashCycle) % dashCycle;
+      const element = lineRef.current?.getElement();
+      if (element) {
+        element.setAttribute("stroke-dashoffset", String(offset));
+      }
+      frame = requestAnimationFrame(tick);
+    }
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isRecommended]);
+
+  return (
+    <Polyline
+      ref={lineRef}
+      positions={positions}
+      pathOptions={{
+        color,
+        weight: isRecommended ? 5 : 2.5,
+        opacity: isRecommended ? 0.96 : 0.46,
+        dashArray: isRecommended ? "12 16" : "4 9",
+        lineCap: "round",
+        lineJoin: "round",
+        className: isRecommended
+          ? "sim-route-line sim-route-line-recommended"
+          : "sim-route-line sim-route-line-alternative",
+      }}
+    >
+      {children}
+    </Polyline>
+  );
+}
+
 function waypointKind(index: number, points: RoutePolylinePoint[]): "start" | "middle" | "end" {
   if (index === 0) return "start";
   if (index === points.length - 1) return "end";
@@ -140,20 +196,7 @@ export default function SimulationMap({ ships, simulationMode, onMapContextMenu,
                   interactive={false}
                 />
               )}
-              <Polyline
-                positions={positions}
-                pathOptions={{
-                  color,
-                  weight: overlay.isRecommended ? 5 : 2.5,
-                  opacity: overlay.isRecommended ? 0.96 : 0.46,
-                  dashArray: overlay.isRecommended ? "12 16" : "4 9",
-                  lineCap: "round",
-                  lineJoin: "round",
-                  className: overlay.isRecommended
-                    ? "sim-route-line sim-route-line-recommended"
-                    : "sim-route-line sim-route-line-alternative",
-                }}
-              >
+              <FlowingRoutePolyline color={color} isRecommended={overlay.isRecommended} positions={positions}>
                 <Tooltip sticky>
                   <span style={{ fontWeight: 900 }}>{overlay.isRecommended ? "추천 시뮬레이션 경로" : "후보 경로"}</span> · {overlay.routeName}
                 </Tooltip>
@@ -171,7 +214,7 @@ export default function SimulationMap({ ships, simulationMode, onMapContextMenu,
                     </p>
                   </div>
                 </Popup>
-              </Polyline>
+              </FlowingRoutePolyline>
               {overlay.isRecommended && (
                 <>
                   {overlay.points.map((point, index) => {
@@ -270,7 +313,7 @@ export default function SimulationMap({ ships, simulationMode, onMapContextMenu,
         style={{
           position: "absolute",
           right: 14,
-          bottom: 14,
+          bottom: 40,
           zIndex: 500,
           width: 230,
           padding: "10px 12px",

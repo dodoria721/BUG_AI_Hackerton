@@ -160,7 +160,7 @@ export default function RouteScenarioResults({ result }: { result: RouteScenario
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%", overflowY: "auto", paddingRight: 2 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingRight: 2 }}>
       <div style={{ borderRadius: 8, border: "1px solid rgba(34,197,94,.18)", background: "rgba(34,197,94,.08)", padding: 10, color: "#bbf7d0", fontSize: 12, lineHeight: 1.5 }}>
         계산 기준: 사전 정의 접근 경로 후보 비교 · 추천 {result.summary.recommendedCount}척 / 입력 {result.summary.shipCount}척
         <br />

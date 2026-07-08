@@ -198,7 +198,7 @@ export default function SimulationPage() {
     <div style={shellStyle}>
       <LeftRail active="/simulation" />
 
-      <div style={{ position: "absolute", inset: "16px 16px 16px 84px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) 360px", gap: 14 }}>
+      <div style={{ position: "absolute", inset: "16px 16px 16px 84px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(380px, 420px)", gap: 14 }}>
         <main style={{ position: "relative", minWidth: 0, border, borderRadius: 14, overflow: "hidden", background: "#0b1220" }}>
           <SimulationMap ships={simulatedShips} simulationMode={simulationMode} onMapContextMenu={setPendingPosition} routeOverlays={routeOverlays} />
 
@@ -454,7 +454,7 @@ export default function SimulationPage() {
             )}
           </section>
 
-          <section style={{ flex: "0 0 auto", minHeight: 220, maxHeight: 520, padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)", overflow: "hidden" }}>
+          <section style={{ flex: "0 0 auto", minHeight: 220, padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)", overflow: "visible" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900 }}>JIT 시뮬레이션 결과</h2>
               {jitResult && <span style={{ color: muted, fontSize: 10.5 }}>{formatDateTime(jitResult.lastUpdated)}</span>}
@@ -557,7 +557,7 @@ export default function SimulationPage() {
             )}
           </section>
 
-          <section style={{ flex: "0 0 auto", minHeight: 240, maxHeight: 560, padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)", overflow: "hidden" }}>
+          <section style={{ flex: "0 0 auto", minHeight: 240, padding: 14, borderRadius: 14, border, background: panel, backdropFilter: "blur(14px)", overflow: "visible" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <h2 style={{ margin: 0, fontSize: 14, fontWeight: 900 }}>친환경 경로 추천 결과</h2>
               {routeResult && <span style={{ color: muted, fontSize: 10.5 }}>{formatDateTime(routeResult.lastUpdated)}</span>}
