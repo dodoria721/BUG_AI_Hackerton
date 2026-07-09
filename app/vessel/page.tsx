@@ -10,10 +10,8 @@ import LeftRail from "@/frontend/components/LeftRail";
 import { LT } from "@/frontend/components/theme";
 import {
   beaufortFromWindMs,
-  CII_CURVE_POINTS,
   CII_GRADE_BANDS,
   CII_GRADE_COLOR,
-  DEMO_ENGINE,
   DEMO_TYPHOON,
   STATUS_LABEL,
   windDir8,
@@ -77,7 +75,7 @@ function Cell({ label, value, unit, accent }: { label: string; value: ReactNode;
   );
 }
 
-// 상단 개별 지표 카드 (Speed / DFOC / RPM / Position / Weather / Attained CII)
+// 상단 개별 지표 카드 (Speed / DFOC / Position / Weather / Attained CII)
 function StatCard({ label, children, dark, style }: { label: string; children: ReactNode; dark?: boolean; style?: CSSProperties }) {
   return (
     <div
@@ -110,8 +108,6 @@ function Big({ value, unit, accent, dark }: { value: ReactNode; unit?: string; a
   );
 }
 
-const TABS = ["대시보드", "엔진", "항차별 성과", "CII", "CII 시뮬레이션", "선석대기예측", "ESD & EU ETS"];
-
 // ── 포맷 헬퍼 ───────────────────────────────────────────────────────────
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 3 });
 function posText(lat: number, lon: number): { lat: string; lon: string } {
@@ -133,7 +129,6 @@ function statusColor(status: string): string {
 }
 
 export default function VesselPage() {
-  const [activeTab, setActiveTab] = useState(0);
   const [plannedSpeed, setPlannedSpeed] = useState(11);
   const [vesselData, setVesselData] = useState<VesselMonitorData | null>(null);
   const [weather, setWeather] = useState<WeatherForecast | null>(null);
@@ -166,6 +161,11 @@ export default function VesselPage() {
   const view = selectedItem?.view ?? null;
   // CII: Required·등급경계는 IMO 표준식, Attained는 서버에서 계산한 대표 프로파일 추정값.
   const cii = selectedItem?.cii ?? null;
+  const ciiCurve = selectedItem?.approachCiiCurve ?? null;
+
+  useEffect(() => {
+    if (ciiCurve) setPlannedSpeed(ciiCurve.selectedSpeedKn);
+  }, [ciiCurve, selectedIdx]);
 
   // 현재 시각 기상(가장 가까운 예보 포인트)
   const wxPoint = useMemo(() => {
@@ -174,10 +174,11 @@ export default function VesselPage() {
     return weather.points.reduce((a, b) => (Math.abs(new Date(b.time).getTime() - t) < Math.abs(new Date(a.time).getTime() - t) ? b : a));
   }, [weather, now]);
 
-  const selectedPt = useMemo(
-    () => CII_CURVE_POINTS.reduce((a, b) => (Math.abs(b.speed - plannedSpeed) < Math.abs(a.speed - plannedSpeed) ? b : a)),
-    [plannedSpeed]
-  );
+  const ciiCurvePoints = useMemo(() => ciiCurve?.points ?? [], [ciiCurve?.points]);
+  const selectedPt = useMemo(() => {
+    if (ciiCurvePoints.length === 0) return null;
+    return ciiCurvePoints.reduce((a, b) => (Math.abs(b.speed - plannedSpeed) < Math.abs(a.speed - plannedSpeed) ? b : a));
+  }, [ciiCurvePoints, plannedSpeed]);
 
   const level = vesselData?.congestion.currentLevel ?? 0;
   const pos = view?.position ? posText(view.position.lat, view.position.lon) : null;
@@ -240,15 +241,12 @@ export default function VesselPage() {
         </div>
 
         {/* ── 지표 카드 행 ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,.85fr) minmax(0,.95fr) minmax(0,.55fr) minmax(0,1.2fr) minmax(0,1.25fr) minmax(0,.95fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,.85fr) minmax(0,.95fr) minmax(0,1.2fr) minmax(0,1.25fr) minmax(0,.95fr)", gap: 12 }}>
           <StatCard label="Speed (SOG)">
             <Big value={view?.speedKn != null ? view.speedKn.toFixed(1) : DASH} unit="kn" />
           </StatCard>
           <StatCard label="M/E DFOC*">
             <Big value={view ? view.dfocEstTonPerDay.toFixed(1) : DASH} unit="t/day" accent={LT.amber} />
-          </StatCard>
-          <StatCard label="RPM">
-            <Big value={DASH} />
           </StatCard>
           <StatCard label="Position (AIS)">
             <div style={{ fontSize: 13, fontWeight: 800, color: ink, lineHeight: 1.35 }}>
@@ -273,36 +271,6 @@ export default function VesselPage() {
               <Big value={DASH} dark />
             )}
           </StatCard>
-        </div>
-
-        {/* ── 탭 ── */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {TABS.map((t, i) => {
-            const on = i === activeTab;
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setActiveTab(i)}
-                style={{
-                  padding: "8px 15px",
-                  fontSize: 12.5,
-                  fontWeight: 800,
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  border: on ? "1px solid transparent" : border,
-                  color: on ? "#fff" : muted,
-                  background: on ? "linear-gradient(135deg,#2f6bff,#5b8cff)" : panel,
-                  boxShadow: on ? "0 6px 16px rgba(47,107,255,.26)" : "none",
-                }}
-              >
-                {t}
-              </button>
-            );
-          })}
-          <span style={{ marginLeft: "auto", fontSize: 10.5, color: muted }}>
-            * 표시된 값 중 <b style={{ color: "#b45309" }}>앰버색/미연동</b>은 모델 추정 또는 미연동 항목
-          </span>
         </div>
 
         {/* ── 패널 그리드 ── */}
@@ -376,19 +344,6 @@ export default function VesselPage() {
             </div>
           </Panel>
 
-          {/* 엔진 모니터링 (미연동 — 예시) */}
-          <Panel title="엔진 모니터링" badge={<MockBadge />}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 10px" }}>
-              <Cell label="RPM" value={DEMO_ENGINE.rpm} />
-              <Cell label="LOAD" value={DEMO_ENGINE.loadPct ?? DASH} unit="%" />
-              <Cell label="SFOC" value={DEMO_ENGINE.sfocGkwh.toFixed(1)} unit="g/kWh" />
-              <Cell label="SLIP" value={DEMO_ENGINE.slipPct.toFixed(1)} unit="%" />
-              <Cell label="EGT" value={DEMO_ENGINE.egtC.toFixed(1)} unit="℃" />
-              <Cell label="L.O Temp" value={DEMO_ENGINE.loTempC.toFixed(1)} unit="℃" />
-            </div>
-            <div style={{ fontSize: 10, color: muted, marginTop: 12 }}>선박 엔진 센서(IoT) 연동 시 실측 표시</div>
-          </Panel>
-
           {/* 연료 소모 추정 (fuel.ts 모델) */}
           <Panel title="연료 소모 추정" badge={<Pill text="모델 추정" tone="blue" />}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 10px" }}>
@@ -411,18 +366,45 @@ export default function VesselPage() {
               ))}
               <span style={{ marginLeft: "auto", fontSize: 10.5, color: muted }}>X축: 운항속도(KNOTS) · Y축: CII지수</span>
             </div>
-            <div style={{ height: 200 }}>
-              <CiiSpeedChart data={CII_CURVE_POINTS} selectedPoint={selectedPt} />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 240 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: muted, whiteSpace: "nowrap" }}>🚀 운항 속도 일정</span>
-                <input type="range" min={8} max={13} step={0.5} value={plannedSpeed} onChange={(e) => setPlannedSpeed(Number(e.target.value))} style={{ flex: 1, accentColor: "#f59e0b" }} />
-                <span style={{ fontSize: 14, fontWeight: 900, color: "#d97706", minWidth: 28, textAlign: "right" }}>{plannedSpeed}</span>
+            {ciiCurve && selectedPt ? (
+              <>
+                <div style={{ height: 200 }}>
+                  <CiiSpeedChart data={ciiCurvePoints} selectedPoint={selectedPt} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: "10px", marginTop: 10 }}>
+                  <Cell label="접근 거리" value={ciiCurve.distanceNm.toFixed(1)} unit="NM" accent={LT.blue} />
+                  <Cell label="DWT 기준" value={Math.round(ciiCurve.capacityTonnage).toLocaleString("ko-KR")} unit="t" />
+                  <Cell label="연료" value={ciiCurve.fuelType} accent={LT.green} />
+                  <Cell label="선택 CII" value={selectedPt.cii.toFixed(3)} accent="#d97706" />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 240 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: muted, whiteSpace: "nowrap" }}>속도별 접근구간 CII</span>
+                    <input
+                      type="range"
+                      min={ciiCurvePoints[0]?.speed ?? 4}
+                      max={ciiCurvePoints[ciiCurvePoints.length - 1]?.speed ?? 24}
+                      step={0.5}
+                      value={plannedSpeed}
+                      onChange={(e) => setPlannedSpeed(Number(e.target.value))}
+                      style={{ flex: 1, accentColor: "#f59e0b" }}
+                    />
+                    <span style={{ fontSize: 14, fontWeight: 900, color: "#d97706", minWidth: 48, textAlign: "right" }}>{plannedSpeed.toFixed(1)}kn</span>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: muted }}>풍향 {wxPoint?.windDeg != null ? windDir8(wxPoint.windDeg) : DASH} {wxPoint?.windSpeed ?? DASH} m/s · BF {bf ?? DASH}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: muted }}>파고 유의파고 {wxPoint?.waveM ?? DASH}m</span>
+                </div>
+                <div style={{ fontSize: 10, color: muted, marginTop: 10, lineHeight: 1.5 }}>
+                  {ciiCurve.capacitySource === "vessel-spec-dwt" ? "선박 제원 DWT 매칭값" : "GT 기반 DWT 추정값"} · {ciiCurve.note}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: muted, padding: "28px 4px", lineHeight: 1.6 }}>
+                AIS 현재 위치·속도와 DWT/GT 기준값이 모두 있어야 접근구간 추정 CII를 계산할 수 있습니다.
+                <br />
+                현재 선택 선박은 필요한 실제 데이터가 부족해 속도별 곡선을 표시하지 않습니다.
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, color: muted }}>🧭 {wxPoint?.windDeg != null ? windDir8(wxPoint.windDeg) : DASH} {wxPoint?.windSpeed ?? DASH} m/s · BF {bf ?? DASH}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: muted }}>📏 유의파고 {wxPoint?.waveM ?? DASH}m</span>
-            </div>
+            )}
           </Panel>
 
           {/* 태풍 모니터링 (미연동 — 예시) */}

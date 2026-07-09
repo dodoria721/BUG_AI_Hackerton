@@ -17,7 +17,7 @@ export default function CiiSpeedChart({ data, selectedPoint }: CiiSpeedChartProp
       <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: -12 }}>
         <CartesianGrid stroke="rgba(15,23,42,.06)" vertical={false} />
         <XAxis dataKey="speed" tick={{ fill: muted, fontSize: 10 }} stroke="rgba(15,23,42,.12)" tickLine={false} />
-        <YAxis tick={{ fill: muted, fontSize: 10 }} stroke="rgba(15,23,42,.12)" tickLine={false} domain={[1, 3]} />
+        <YAxis tick={{ fill: muted, fontSize: 10 }} stroke="rgba(15,23,42,.12)" tickLine={false} domain={["auto", "auto"]} />
         <Tooltip
           contentStyle={{ background: "#fff", border: LT.border, borderRadius: 10, fontSize: 12, boxShadow: LT.shadow }}
           labelStyle={{ color: muted }}
