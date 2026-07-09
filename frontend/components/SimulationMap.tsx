@@ -180,14 +180,16 @@ export default function SimulationMap({ ships, simulationMode, onMapContextMenu,
         <SimulationContextMenuHandler enabled={simulationMode} onMapContextMenu={onMapContextMenu} />
         {overlays.map((overlay) => {
           const positions = overlay.points.map((point) => [point.lat, point.lng] as [number, number]);
-          const color = overlay.isRecommended ? "#5eead4" : "#60a5fa";
+          const isAiRoute = overlay.routeSource === "ai-computed-route";
+          // AI 계산 경로는 지정항로(청록/파랑)와 구분되도록 보라색 계열을 쓴다.
+          const color = isAiRoute ? (overlay.isRecommended ? "#c084fc" : "#a78bfa") : overlay.isRecommended ? "#5eead4" : "#60a5fa";
           return (
             <Fragment key={`${overlay.shipId}-${overlay.routeId}`}>
               {overlay.isRecommended && (
                 <Polyline
                   positions={positions}
                   pathOptions={{
-                    color: "#2dd4bf",
+                    color: isAiRoute ? "#a855f7" : "#2dd4bf",
                     weight: 13,
                     opacity: 0.16,
                     lineCap: "round",
@@ -199,19 +201,31 @@ export default function SimulationMap({ ships, simulationMode, onMapContextMenu,
               )}
               <FlowingRoutePolyline color={color} isRecommended={overlay.isRecommended} positions={positions}>
                 <Tooltip sticky>
-                  <span style={{ fontWeight: 900 }}>{overlay.isRecommended ? "추천 시뮬레이션 경로" : "후보 경로"}</span> · {overlay.routeName}
+                  <span style={{ fontWeight: 900 }}>
+                    {isAiRoute ? "AI 계산 경로" : overlay.isRecommended ? "추천 시뮬레이션 경로" : "후보 경로"}
+                  </span>{" "}
+                  · {overlay.routeName}
                 </Tooltip>
                 <Popup>
                   <div className="text-sm">
-                    <p style={{ margin: "0 0 6px", fontWeight: 900, color: overlay.isRecommended ? "#0f766e" : "#2563eb", letterSpacing: ".04em" }}>
-                      {overlay.isRecommended ? "RECOMMENDED SCENARIO ROUTE" : "SCENARIO ROUTE CANDIDATE"}
+                    <p
+                      style={{
+                        margin: "0 0 6px",
+                        fontWeight: 900,
+                        color: isAiRoute ? "#7e22ce" : overlay.isRecommended ? "#0f766e" : "#2563eb",
+                        letterSpacing: ".04em",
+                      }}
+                    >
+                      {isAiRoute ? "AI-COMPUTED ROUTE (NOT AN MOF-DESIGNATED ROUTE)" : overlay.isRecommended ? "RECOMMENDED SCENARIO ROUTE" : "SCENARIO ROUTE CANDIDATE"}
                     </p>
                     <p style={{ margin: "3px 0", fontWeight: 800 }}>{overlay.routeName}</p>
                     <p style={{ margin: "3px 0" }}>거리: {overlay.distanceNm ?? "-"}NM</p>
                     <p style={{ margin: "3px 0" }}>ETA: {formatDateTime(overlay.eta)}</p>
                     <p style={{ margin: "3px 0" }}>점수: {overlay.score ?? "-"}</p>
                     <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 11 }}>
-                      해수부 항만가이드라인 지정항로 중심선을 표시한 시뮬레이션 선입니다. 실제 항해 지시가 아닙니다.
+                      {isAiRoute
+                        ? "해수부 지정항로가 아닌, 육지·활성 태풍 위험구역을 피해 계산한 참고용 경로입니다. 실제 항해 지시가 아닙니다."
+                        : "해수부 항만가이드라인 지정항로 중심선을 표시한 시뮬레이션 선입니다. 실제 항해 지시가 아닙니다."}
                     </p>
                   </div>
                 </Popup>

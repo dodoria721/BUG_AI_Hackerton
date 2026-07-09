@@ -1,6 +1,6 @@
 "use client";
 
-import type { RouteScenarioResponse } from "@/frontend/types/route-scenario";
+import type { RouteScenarioResponse, SeaRiskAssessment, SeaRiskGrade } from "@/frontend/types/route-scenario";
 import type { ScenarioShipSource } from "@/frontend/types/simulation";
 import { LT } from "@/frontend/components/theme";
 
@@ -9,6 +9,7 @@ const ink = LT.ink;
 // 경로선 색은 지도(추천/후보) 시각 언어를 유지하되 밝은 배경에서 보이도록 톤만 맞춘다.
 const recColor = "#0d9488"; // 추천 경로(청록)
 const altColor = "#3b82f6"; // 후보 경로(파랑)
+const aiColor = "#9333ea"; // AI 계산 경로(보라) — 지정항로와 구분
 
 function formatDateTime(iso: string): string {
   const date = new Date(iso);
@@ -29,6 +30,47 @@ function formatKg(value: number): string {
 
 function formatScore(value: number): string {
   return value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
+}
+
+function seaRiskColor(grade: SeaRiskGrade): string {
+  switch (grade) {
+    case "위험":
+      return "#dc2626";
+    case "높음":
+      return "#ea580c";
+    case "보통":
+      return LT.blue;
+    case "낮음":
+      return LT.green;
+    default:
+      return muted;
+  }
+}
+
+function SeaRiskBanner({ seaRisk }: { seaRisk: SeaRiskAssessment }) {
+  const color = seaRiskColor(seaRisk.grade);
+  return (
+    <div
+      style={{
+        borderRadius: 12,
+        background: `${color}14`,
+        padding: 11,
+        color,
+        fontSize: 12,
+        lineHeight: 1.5,
+        fontWeight: 700,
+      }}
+    >
+      해상 리스크: {seaRisk.grade} ({Math.round(seaRisk.level * 100)}%)
+      {seaRisk.factors.length > 0 ? (
+        <div style={{ marginTop: 2, color: muted, fontSize: 10.5, fontWeight: 600 }}>
+          {seaRisk.factors.map((f) => `${f.label} ${f.detail}`).join(" · ")}
+        </div>
+      ) : (
+        <div style={{ marginTop: 2, color: muted, fontSize: 10.5, fontWeight: 600 }}>{seaRisk.basis[0]}</div>
+      )}
+    </div>
+  );
 }
 
 function MetricPill({ label, value, accent = LT.green }: { label: string; value: string; accent?: string }) {
@@ -170,6 +212,8 @@ export default function RouteScenarioResults({ result }: { result: RouteScenario
         {result.calculationNote}
       </div>
 
+      {result.seaRisk && <SeaRiskBanner seaRisk={result.seaRisk} />}
+
       {result.results.map((shipResult) => {
         const recommended = shipResult.routeScenarios.find((scenario) => scenario.isRecommended);
         return (
@@ -256,6 +300,11 @@ export default function RouteScenarioResults({ result }: { result: RouteScenario
                   <MetricPill label="예상 대기" value={`${recommended.estimatedWaitingMinutes}분`} accent={LT.amber} />
                   <MetricPill label="연료 절감" value={formatKg(recommended.estimatedFuelSavedKg)} accent={LT.green} />
                   <MetricPill label="CO₂ 감축" value={formatKg(recommended.estimatedCo2ReducedKg)} accent={LT.green} />
+                  <MetricPill
+                    label="해상 리스크"
+                    value={`${recommended.seaRisk.grade} (${Math.round(recommended.seaRisk.level * 100)}%)`}
+                    accent={seaRiskColor(recommended.seaRisk.grade)}
+                  />
                 </div>
               )}
 
@@ -279,14 +328,22 @@ export default function RouteScenarioResults({ result }: { result: RouteScenario
                     </tr>
                   </thead>
                   <tbody>
-                    {shipResult.routeScenarios.map((scenario) => (
+                    {shipResult.routeScenarios.map((scenario) => {
+                      const isAiRoute = scenario.routeSource === "ai-computed-route";
+                      const lineColor = isAiRoute ? aiColor : scenario.isRecommended ? recColor : altColor;
+                      return (
                       <tr key={scenario.routeId} style={{ color: scenario.isRecommended ? "#0f766e" : LT.inkSoft, background: scenario.isRecommended ? "rgba(13,148,136,.07)" : "transparent" }}>
                         <td style={{ padding: "7px 8px", borderBottom: `1px solid ${LT.borderColor}`, fontWeight: 800 }}>
                           {scenario.rank}{scenario.isRecommended ? " · 추천" : ""}
                         </td>
                         <td style={{ padding: "7px 8px", borderBottom: `1px solid ${LT.borderColor}` }}>
-                          <span style={{ display: "inline-block", width: 24, borderTop: scenario.isRecommended ? `2px solid ${recColor}` : `2px dashed ${altColor}`, marginRight: 7, transform: "translateY(-3px)" }} />
+                          <span style={{ display: "inline-block", width: 24, borderTop: scenario.isRecommended ? `2px solid ${lineColor}` : `2px dashed ${lineColor}`, marginRight: 7, transform: "translateY(-3px)" }} />
                           {scenario.routeShortName}
+                          {isAiRoute && (
+                            <span style={{ marginLeft: 5, fontSize: 9, fontWeight: 900, color: aiColor, background: "rgba(147,51,234,.12)", padding: "1px 5px", borderRadius: 5 }}>
+                              AI
+                            </span>
+                          )}
                         </td>
                         <td style={{ padding: "7px 8px", borderBottom: `1px solid ${LT.borderColor}` }}>{scenario.distanceNm}NM</td>
                         <td style={{ padding: "7px 8px", borderBottom: `1px solid ${LT.borderColor}` }}>{scenario.estimatedWaitingMinutes}분</td>
@@ -294,7 +351,8 @@ export default function RouteScenarioResults({ result }: { result: RouteScenario
                         <td style={{ padding: "7px 8px", borderBottom: `1px solid ${LT.borderColor}` }}>{formatKg(scenario.estimatedCo2ReducedKg)}</td>
                         <td style={{ padding: "7px 8px", borderBottom: `1px solid ${LT.borderColor}` }}>{formatScore(scenario.score)}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

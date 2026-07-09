@@ -37,6 +37,11 @@ export function buildRouteScenarioFallbackAdvisor(result: RouteScenarioShipResul
         ]
       : ["추천 경로 계산 결과가 없습니다."],
     risks: [
+      ...(recommended && (recommended.seaRisk.grade === "높음" || recommended.seaRisk.grade === "위험")
+        ? [
+            `해상 리스크 ${recommended.seaRisk.grade}(레벨 ${Math.round(recommended.seaRisk.level * 100)}%) — ${recommended.seaRisk.basis.join(" ")}`,
+          ]
+        : []),
       "본 결과는 사전 정의된 접근 경로 후보를 비교한 시뮬레이션입니다.",
       "실제 항해 지시가 아니며 관제·도선·예선·기상·수심·선박 안전 조건은 운영자가 확인해야 합니다.",
     ],

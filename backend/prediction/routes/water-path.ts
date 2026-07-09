@@ -134,11 +134,15 @@ function pullToWater(p: XY, obstacles: LandObstacle[]): XY {
   return best;
 }
 
-// 정적 장애물에 대한 꼭짓점 그래프는 1회만 계산(메모).
+// 정적 장애물(기본 육지 목록) 꼭짓점 그래프는 1회만 계산해 메모한다.
+// ⚠️ 캐시는 obstacles 가 기본 BUSAN_LAND_OBSTACLES 그대로일 때만 재사용한다 — 태풍 회피구역처럼
+// 매 호출마다 달라지는 장애물이 섞이면, 캐시가 이전(태풍 없는) 그래프를 그대로 돌려줘서
+// 새 장애물이 조용히 무시되는 버그가 생긴다(실측: 태풍 장애물을 넘겨도 회피 안 됨).
 let cachedVertices: XY[] | null = null;
 let cachedAdj: number[][] | null = null; // adj[i] = 보이는 정점 인덱스들
 function ensureGraph(obstacles: LandObstacle[]): { vertices: XY[]; adj: number[][] } {
-  if (cachedVertices && cachedAdj) return { vertices: cachedVertices, adj: cachedAdj };
+  const cacheable = obstacles === BUSAN_LAND_OBSTACLES;
+  if (cacheable && cachedVertices && cachedAdj) return { vertices: cachedVertices, adj: cachedAdj };
   const vertices = buildOffsetVertices(obstacles);
   const adj: number[][] = vertices.map(() => []);
   for (let i = 0; i < vertices.length; i++) {
@@ -149,8 +153,10 @@ function ensureGraph(obstacles: LandObstacle[]): { vertices: XY[]; adj: number[]
       }
     }
   }
-  cachedVertices = vertices;
-  cachedAdj = adj;
+  if (cacheable) {
+    cachedVertices = vertices;
+    cachedAdj = adj;
+  }
   return { vertices, adj };
 }
 

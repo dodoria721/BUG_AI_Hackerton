@@ -16,6 +16,7 @@ export interface RouteScenarioMapOverlay {
   shipId: string;
   routeId: string;
   routeName: string;
+  routeSource: "manual-simulation-route" | "mof-guideline-route" | "ai-computed-route";
   isRecommended: boolean;
   points: RoutePolylinePoint[];
   distanceNm?: number;
@@ -33,11 +34,29 @@ export interface RouteScenarioAdvisorResult {
   disclaimer: string;
 }
 
+export type SeaRiskGrade = "정보없음" | "낮음" | "보통" | "높음" | "위험";
+
+export interface SeaRiskFactor {
+  key: "wave" | "wind" | "typhoon" | "operationIndex";
+  label: string;
+  value: number;
+  risk: number;
+  detail: string;
+}
+
+export interface SeaRiskAssessment {
+  level: number;
+  grade: SeaRiskGrade;
+  factors: SeaRiskFactor[];
+  basis: string[];
+  dataAvailable: boolean;
+}
+
 export interface RouteScenario {
   routeId: string;
   routeName: string;
   routeShortName: string;
-  routeSource: "manual-simulation-route" | "mof-guideline-route";
+  routeSource: "manual-simulation-route" | "mof-guideline-route" | "ai-computed-route";
   destinationPortId: string;
   destinationPortName: string;
   distanceNm: number;
@@ -54,6 +73,7 @@ export interface RouteScenario {
   estimatedCo2Kg: number;
   estimatedFuelSavedKg: number;
   estimatedCo2ReducedKg: number;
+  seaRisk: SeaRiskAssessment;
   score: number;
   rank: number;
   isRecommended: boolean;
@@ -89,6 +109,7 @@ export interface RouteScenarioResponse {
   basis: "predefined-approach-route-comparison";
   lastUpdated: string;
   calculationNote: string;
+  seaRisk: SeaRiskAssessment;
   isFallback: boolean;
   dataSources?: string[];
   results: RouteScenarioShipResult[];

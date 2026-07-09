@@ -29,6 +29,17 @@ export const BUSAN_PORT: PortConfig = {
     { id: "zone-port-limit", name: "항계", center: { lat: 35.05, lon: 129.08 }, radiusKm: 15 },
   ],
 
+  // ── 해양기상/파랑/조위/조류 API 조회용 관측소 코드 ──
+  // TODO: 각 기관 문서(API 신청 승인 메일/명세서)에서 부산항과 가장 가까운 코드를 확인해 채운다.
+  // 빈 문자열인 동안은 backend/marine/* 의 fetch 함수가 "미설정"으로 보고 null 을 반환한다.
+  marineStations: {
+    nmpntOrgCode: "", // 국립해양측위정보원 해양기상 API 기관코드(mmaf)
+    nmpntStationId: "", // 국립해양측위정보원 해양기상 API 지점코드(mmsi) — 부산 인근 관측지점
+    khoaTideStationId: "DT_0005", // 국립해양조사원 조위관측소 코드 — 부산(실측 확인 완료, 2026-07-09)
+    khoaWaveStationId: "TW_0062", // 국립해양조사원 국가해양관측망 관측소 코드 — 해운대해수욕장(부산, 실측 확인 완료 2026-07-09)
+    khoaCurrentStationId: "16LTC13", // 국립해양조사원 조류예측 지점 코드 — 부산항입구(실측 확인 완료 2026-07-09)
+  },
+
   // 부두별 대표 좌표(근사). Port-MIS 선석명을 keyword로 이 부두에 매칭한다.
   // keyword 순서/우선순위: 구체적인 구역명(감천·신항 등)이 먼저 걸리도록 배열 앞쪽에 둔다.
   berthAreas: [

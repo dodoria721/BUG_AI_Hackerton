@@ -31,6 +31,10 @@ export function buildRouteScenarioAdvisorPrompt(result: RouteScenarioShipResult)
     .slice(0, 6)
     .map((item) => `- ${item}`)
     .join("\n");
+  const seaRisk = recommended?.seaRisk;
+  const seaRiskLine = seaRisk
+    ? `등급=${seaRisk.grade}, 레벨=${Math.round(seaRisk.level * 100)}%, 근거=${seaRisk.basis.join("; ")}`
+    : "정보없음";
 
   return `당신은 부산항 입항 시나리오를 검토하는 운영자용 설명 어시스턴트입니다.
 아래 결정론적 계산 결과를 바탕으로 설명만 작성하세요.
@@ -42,6 +46,7 @@ export function buildRouteScenarioAdvisorPrompt(result: RouteScenarioShipResult)
 - 실제 항해 지시가 아니라 사전 정의 접근 경로 후보 비교 시뮬레이션임을 명시하세요.
 - "정확히 최적" 대신 "현재 시뮬레이션 기준 가장 유리한 후보"라고 표현하세요.
 - 관제, 도선, 예선, 기상, 수심, 선박 안전 조건은 실제 운영자가 확인해야 한다고 명시하세요.
+- 해상 리스크 등급이 "높음" 또는 "위험"이면 risks 배열에 반드시 그 사실을 포함하세요.
 - JSON 객체만 출력하고 코드 블록은 쓰지 마세요.
 
 ## 선박
@@ -57,6 +62,9 @@ ${alternatives.length ? alternatives.map(routeLine).join("\n") : "- 없음"}
 
 ## 계산 근거
 ${basis || "- 없음"}
+
+## 해상 리스크
+${seaRiskLine}
 
 ## 주의사항
 ${warnings || "- 본 결과는 운영자 검토용 시뮬레이션입니다."}

@@ -153,7 +153,9 @@ export interface ApproachRouteWaypoint {
 //  - manual-simulation-route: 손으로 찍은 시나리오 비교용 경로(구버전).
 //  - mof-guideline-route: 해수부 항만가이드라인 지정항로(data.go.kr 15121382)의 회랑 폴리곤에서
 //    추출한 실측 중심선. backend/ports/busan-guideline-routes.ts 참조.
-export type ApproachRouteSource = "manual-simulation-route" | "mof-guideline-route";
+// - ai-computed-route: 해수부 지정항로가 아니라, 실시간 태풍 위치(있으면)와 육지를 피해
+//   선박 현재위치→목적지를 직접 계산한 참고용 경로(backend/prediction/routes/ai-route.ts).
+export type ApproachRouteSource = "manual-simulation-route" | "mof-guideline-route" | "ai-computed-route";
 
 export interface ApproachRoute {
   id: string;
@@ -165,6 +167,17 @@ export interface ApproachRoute {
   waypoints: ApproachRouteWaypoint[];
 }
 
+// 해양기상/파랑/조위/조류 API 조회에 쓰는 관측소·지점 코드.
+// 발급받은 기관 문서에서 부산항과 가장 가까운 코드를 확인해 채운다 — 빈 문자열이면
+// backend/marine/* 의 fetch 함수가 "미설정"으로 보고 null 을 반환한다(에러 없이 안전 폴백).
+export interface MarineStationConfig {
+  nmpntOrgCode: string; // 국립해양측위정보원 해양기상 API 기관코드(mmaf) — 해양기상 조회용
+  nmpntStationId: string; // 국립해양측위정보원 해양기상 API 지점코드(mmsi, 콤마로 다건 가능) — 해양기상 조회용
+  khoaTideStationId: string; // 국립해양조사원 조위관측소 코드 — 조위 실측·예측 조회용
+  khoaWaveStationId: string; // 국립해양조사원 국가해양관측망 관측소 코드 — 실측 파랑 조회용
+  khoaCurrentStationId: string; // 국립해양조사원 조류관측/예측 지점 코드 — 조류예보 조회용
+}
+
 export interface PortConfig {
   name: string;
   center: LatLon;
@@ -172,6 +185,7 @@ export interface PortConfig {
   berths: Berth[];
   zones: Zone[];
   berthAreas: BerthArea[]; // 부두별 위치(선석명 분류용)
+  marineStations: MarineStationConfig; // 해양기상/파랑/조위/조류 API 조회용 관측소 코드
   congestionThresholds: CongestionThresholds;
   shipsPerHourCapacity: number; // (AIS 혼잡도) 시간당 처리 가능 선박 수 — 정규화 기준
   arrivalCapacityPerHour: number; // (Port-MIS 혼잡도) 시간당 입항 신고 처리량 — 정규화 기준

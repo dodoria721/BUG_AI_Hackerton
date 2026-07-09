@@ -257,6 +257,7 @@ export default function SimulationPage() {
           shipId: shipResult.shipId ?? shipResult.shipName,
           routeId: scenario.routeId,
           routeName: scenario.routeName,
+          routeSource: scenario.routeSource,
           isRecommended: scenario.isRecommended,
           points: scenario.routePolyline.points,
           distanceNm: scenario.distanceNm,
