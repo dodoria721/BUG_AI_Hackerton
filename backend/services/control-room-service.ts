@@ -5,6 +5,7 @@ import {
 import { fetchShips } from "@/backend/ais/ship-source";
 import { resolveRegionalCongestion } from "@/backend/congestion/regional-congestion";
 import { computeCongestionForecast } from "@/backend/prediction/congestion";
+import { detectCloseQuarters, isMonitoredVessel } from "@/backend/prediction/collision-risk";
 import type { EnergyDecision } from "@/backend/prediction/energy-decision";
 import { fetchPortCongestion } from "@/backend/portmis/congestion-source";
 import { fetchPortCalls } from "@/backend/portmis/portcall-source";
@@ -46,10 +47,29 @@ export interface ControlRoomPriorityTarget {
   confidence?: string;
 }
 
+// 근접 충돌위험(CPA/TCPA) 경보 한 건 — 관제 안전 브리핑용.
+export interface ControlRoomCollisionAlert {
+  aName: string;
+  bName: string;
+  risk: "danger" | "warning";
+  cpaNm: number; // 최근접 거리(해리)
+  tcpaMinutes: number; // 최근접까지 시간(분)
+  encounter: string; // 조우 형태(head-on/crossing/overtaking/indeterminate)
+}
+
+export interface ControlRoomCollisionRisk {
+  totalAlerts: number;
+  dangerCount: number;
+  warningCount: number;
+  monitoredVessels: number; // 관제 대상(대형 상선)으로 분류돼 판정에 든 선박 수
+  topAlerts: ControlRoomCollisionAlert[]; // 심각도순 상위
+}
+
 export interface ControlRoomSnapshot {
   generatedAt: string;
   ports: ControlRoomPortSnapshot[];
   ships: ControlRoomShipSummary;
+  collisionRisk: ControlRoomCollisionRisk;
   energy: {
     candidateCount: number;
     recommendedCount: number;
@@ -181,6 +201,31 @@ export function buildPriorityTargets(
     }));
 }
 
+const COLLISION_TOP_N = 5;
+
+// AIS 선박 목록에서 근접 충돌위험(CPA/TCPA)을 집계한다. detectCloseQuarters가 관제 대상(대형 상선)만
+// 걸러 판정하므로, 여기서는 요약 수치와 상위 경보만 뽑는다.
+function buildCollisionRisk(ships: Ship[]): ControlRoomCollisionRisk {
+  const t = BUSAN_PORT.collisionRisk;
+  const monitoredVessels = ships.filter((ship) => isMonitoredVessel(ship, t)).length;
+  const alerts = detectCloseQuarters(ships, BUSAN_PORT);
+
+  return {
+    totalAlerts: alerts.length,
+    dangerCount: alerts.filter((alert) => alert.risk === "danger").length,
+    warningCount: alerts.filter((alert) => alert.risk === "warning").length,
+    monitoredVessels,
+    topAlerts: alerts.slice(0, COLLISION_TOP_N).map((alert) => ({
+      aName: alert.aName,
+      bName: alert.bName,
+      risk: alert.risk === "danger" ? "danger" : "warning",
+      cpaNm: alert.cpaNm,
+      tcpaMinutes: alert.tcpaMinutes,
+      encounter: alert.encounter,
+    })),
+  };
+}
+
 function summarizeShips(ships: Ship[]): ControlRoomShipSummary {
   return ships.reduce<ControlRoomShipSummary>(
     (acc, ship) => ({
@@ -234,6 +279,7 @@ async function collectControlRoomData(): Promise<{
 
   const congestion = portMisCongestion ?? computeCongestionForecast(ships, BUSAN_PORT);
   const priorityTargets = buildPriorityTargets(energyResult.decisions);
+  const collisionRisk = buildCollisionRisk(ships);
   const dataSources = Array.from(
     new Set([
       "ais-supabase-ships",
@@ -241,6 +287,7 @@ async function collectControlRoomData(): Promise<{
       portMisCongestion ? "port-mis-congestion" : "ais-congestion-fallback",
       "regional-port-congestion",
       "jit-energy-decisions",
+      "cpa-tcpa-collision-risk",
       ...energyResult.dataSources,
     ])
   );
@@ -249,6 +296,7 @@ async function collectControlRoomData(): Promise<{
     generatedAt: new Date().toISOString(),
     ports: buildPortSnapshots(congestion, regionalCongestion, portCalls),
     ships: summarizeShips(ships),
+    collisionRisk,
     energy: {
       candidateCount: energyResult.summary.candidateCount,
       recommendedCount: energyResult.summary.recommendedCount,
@@ -278,6 +326,7 @@ async function collectControlRoomData(): Promise<{
       "AI는 백엔드 계산 결과를 설명할 뿐 새로운 수치를 계산하지 않습니다.",
       "우선순위는 JIT 감속 권고 결과의 CO2 감축, 대기시간 감소, 혼잡도, 선박 규모 기준으로 백엔드에서 산정합니다.",
       "시뮬레이션 경로 추천 결과는 현재 서버에 저장하지 않아 control-room에서는 요약만 표시합니다.",
+      "근접 충돌위험(CPA/TCPA)은 AIS 위치·침로·속력 기반 추정이며 관제 대상(대형 상선)만 판정합니다. 실제 회피 판단·교신은 관제사가 수행합니다.",
       "본 결과는 운영자 검토용이며 실제 항해 지시가 아닙니다.",
     ],
   };

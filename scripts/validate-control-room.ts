@@ -56,6 +56,7 @@ const snapshot: ControlRoomSnapshot = {
     },
   ],
   ships: { total: 10, underway: 6, berthed: 2, anchored: 2 },
+  collisionRisk: { totalAlerts: 0, dangerCount: 0, warningCount: 0, monitoredVessels: 5, topAlerts: [] },
   energy: {
     candidateCount: 2,
     recommendedCount: 2,
@@ -86,5 +87,25 @@ const noTargetFallback = buildControlRoomFallbackBriefing(
 );
 assert.equal(noTargetFallback.priorityVessels.length, 0);
 assert.ok(noTargetFallback.priorityActions.some((item) => item.includes("현재 JIT 감속 권고 대상 선박이 없습니다")));
+
+// 안전 우선 — 근접 충돌위험(danger)이 있으면 혼잡도가 낮고 JIT 대상이 없어도 riskLevel은 high,
+// 헤드라인·risks·priorityActions에 충돌 경보가 노출된다.
+const collisionSnapshot: ControlRoomSnapshot = {
+  ...snapshot,
+  ports: [{ ...snapshot.ports[0], congestionLevel: 0.1, congestionStatus: "원활" }],
+  energy: { ...snapshot.energy, recommendedCount: 0 },
+  collisionRisk: {
+    totalAlerts: 3,
+    dangerCount: 1,
+    warningCount: 2,
+    monitoredVessels: 40,
+    topAlerts: [{ aName: "ALPHA", bName: "BRAVO", risk: "danger", cpaNm: 0.08, tcpaMinutes: 6.2, encounter: "head-on" }],
+  },
+};
+const collisionFallback = buildControlRoomFallbackBriefing(collisionSnapshot, []);
+assert.equal(collisionFallback.riskLevel, "high", "충돌 danger는 혼잡도가 낮아도 high");
+assert.ok(collisionFallback.headline.includes("충돌"), "헤드라인에 충돌 노출");
+assert.ok(collisionFallback.risks.some((item) => item.includes("충돌위험")), "risks에 충돌 요약");
+assert.ok(collisionFallback.priorityActions.some((item) => item.includes("충돌위험")), "priorityActions에 충돌 조치");
 
 console.log("control room validation passed");

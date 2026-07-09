@@ -10,6 +10,7 @@ export interface StaticInfo {
   callSign?: string;
   destination?: string;
   imo?: string;
+  shipType?: number; // AIS 선종코드(0~99). backend/ais/ship-type.ts
 }
 
 // ITU-R M.1371 항행 상태 코드를 플랫폼이 쓰는 3종 상태로 단순화한다.
@@ -49,5 +50,6 @@ export function positionReportToShip(
     status,
     ...(staticInfo?.callSign ? { callSign: staticInfo.callSign.trim() } : {}),
     ...(staticInfo?.imo ? { imo: staticInfo.imo } : {}),
+    ...(staticInfo?.shipType != null ? { aisShipType: staticInfo.shipType } : {}),
   };
 }

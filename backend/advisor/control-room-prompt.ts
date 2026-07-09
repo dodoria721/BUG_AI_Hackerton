@@ -5,6 +5,7 @@ function compactSnapshot(snapshot: ControlRoomSnapshot, priorityTargets: Control
     generatedAt: snapshot.generatedAt,
     ports: snapshot.ports,
     ships: snapshot.ships,
+    collisionRisk: snapshot.collisionRisk,
     energy: snapshot.energy,
     routeScenario: snapshot.routeScenario,
     priorityTargets: priorityTargets.map((target) => ({
@@ -35,6 +36,9 @@ Important rules:
 - Use only the backend-computed values in the provided JSON.
 - Do not reorder priorityTargets. Keep their rank order exactly.
 - Do not change ETA, speed, waiting time, fuel, CO2, congestion, or score values.
+- Safety first: treat collisionRisk (close-quarters CPA/TCPA alerts) as the top priority.
+  If collisionRisk.dangerCount > 0, riskLevel must be "high" and the headline and risks must mention the collision risk.
+  Reflect collisionRisk in summary/priorityActions/risks using its backend values (cpaNm, tcpaMinutes, vessel names).
 - This is not navigation instruction, automatic control, or a safety guarantee.
 - Say that operators must verify weather, channel, VTS, pilotage, and vessel safety conditions.
 - Output only a JSON object. Do not wrap it in markdown.
