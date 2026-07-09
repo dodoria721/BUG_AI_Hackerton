@@ -67,7 +67,9 @@ subscribeAisStream({
       const s = msg.Message.ShipStaticData;
       // IMO 0 은 "미제공"을 뜻하므로 값으로 취급하지 않는다.
       const imo = s.ImoNumber && s.ImoNumber > 0 ? String(s.ImoNumber) : undefined;
-      staticInfoByMmsi.set(mmsi, { name: s.Name, callSign: s.CallSign, destination: s.Destination, imo });
+      // 선종코드 0 은 "미분류"라 값으로 취급하지 않는다.
+      const shipType = s.Type && s.Type > 0 ? s.Type : undefined;
+      staticInfoByMmsi.set(mmsi, { name: s.Name, callSign: s.CallSign, destination: s.Destination, imo, shipType });
       pendingStatic.add(mmsi); // 다음 정적 flush에서 이 배의 식별 필드를 DB에 반영
       return;
     }

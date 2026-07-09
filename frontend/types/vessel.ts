@@ -35,6 +35,26 @@ export interface CiiStatus {
   marginPct: number;
 }
 
+export interface ApproachCiiCurvePoint {
+  speed: number;
+  cii: number;
+  fuelTon: number;
+  co2Ton: number;
+  travelHours: number;
+}
+
+export interface ApproachCiiCurve {
+  basis: "ais-position-to-port-approach";
+  distanceNm: number;
+  capacityTonnage: number;
+  capacitySource: "vessel-spec-dwt" | "gt-estimate";
+  fuelType: FuelType;
+  selectedSpeedKn: number;
+  selectedCii: number;
+  points: ApproachCiiCurvePoint[];
+  note: string;
+}
+
 export interface FuelBreakdown {
   totalTon: number;
 }
@@ -53,10 +73,12 @@ export interface SpeedAdvisory {
 }
 
 export interface VesselMonitorItem {
+  id?: string;
   label: string;
   hasMatchedShip: boolean;
   view: VesselView;
   cii: CiiStatus | null;
+  approachCiiCurve: ApproachCiiCurve | null;
   advisory: SpeedAdvisory | null;
 }
 

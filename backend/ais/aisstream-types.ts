@@ -20,6 +20,7 @@ export interface AisShipStaticData {
   CallSign?: string; // 호출부호 — backend/portmis 매칭 키로 쓴다
   Destination?: string; // 자유 텍스트, "@" 패딩 포함 — busan-filter.ts에서 정제
   ImoNumber?: number; // IMO 선박식별번호 (미제공 시 0)
+  Type?: number; // 선종코드(ITU-R M.1371, 0~99) — 대형 상선/소형선 분류용. backend/ais/ship-type.ts
 }
 
 // PositionReport/ShipStaticData 둘 다 같은 envelope 모양이라 optional 필드로 묶어서 받는다.

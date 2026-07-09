@@ -59,6 +59,20 @@ export const BUSAN_PORT: PortConfig = {
   // level = 0.0~0.3 원활, 0.3~0.6 보통, 0.6~1.0 혼잡
   congestionThresholds: { low: 0.3, medium: 0.6 },
 
+  // VTS 근접 충돌위험 경보 경계값. 부산항 접근수로·항계는 폭이 넓지 않아,
+  // 최근접 0.5해리(≈925m) 이내면 주의, 0.25해리(≈460m) 이내면 위험으로 본다.
+  // 15분 이내에 최근접이 예상될 때만 경보하고, 0.5kn 미만(접안·묘박)은 판정에서 뺀다.
+  // 상대속도 2kn 미만은 붐비는 정박지에서 서로 가까이 떠 있을 뿐인 저속 쌍이라 제외한다.
+  // 총톤수 300 미만 소형선(어선 등)은 개별 충돌 경보 대상에서 뺀다(실 VTS 관행).
+  collisionRisk: {
+    cpaWarnNm: 0.5,
+    cpaDangerNm: 0.25,
+    tcpaHorizonMin: 15,
+    ignoreSpeedKn: 0.5,
+    minClosingSpeedKn: 2,
+    minMonitoredGrossTonnage: 300,
+  },
+
   // (AIS 혼잡도) 시간당 이 척수를 초과해 입항하면 혼잡도 level = 1(포화)로 간주
   shipsPerHourCapacity: 4,
 
@@ -167,5 +181,27 @@ export const BUSAN_PORT: PortConfig = {
     monthFactor: [
       1.026, 1.073, 1.038, 1.031, 1.043, 1.007, 0.986, 0.995, 0.947, 0.953, 0.953, 0.952,
     ],
+  },
+
+  // 정박료 + 탄소 그림자가격 정책 — 출처를 밝힐 수 있는 실측/시세 값만 남겼다.
+  // (예선료·선원인건비·대기(체선)비용·냉동컨테이너 전력비는 신뢰할 만한 공개 요율 자료를
+  //  찾지 못해 모델에서 제외했다. 임의 추정치를 "공식 수치"처럼 내놓지 않기 위한 결정.)
+  //
+  //  - foreignGoing/coastal: 해양수산부 고시 제2018-174호 [별표1]
+  //    "무역항의 항만시설 사용 및 사용료에 관한 규정"(항만법 시행령 제46조 제2항) 실측 요율.
+  //    정박료 기본료(10톤·12시간당): 외항선 187원, 내항선 61원.
+  //    초과사용료(10톤·1시간당): 외항선 15.7원, 내항선 5.2원. 총톤수 150톤 이상 선박 대상.
+  //  - fxKrwPerUsd: 2026-07-07 USD/KRW 시장환율(~1,515.64) 스냅샷. 실시간 아님, 안내용.
+  //  - carbonShadowPriceUsdPerTon: EU ETS 2026년 평균 전망 ~€85/tCO2 × 2026-07-09 EUR/USD
+  //    1.1443 ≈ $97/tCO2. 부산항이 실제 부과하는 요금이 아니라 국제 탄소시장 참고 지표.
+  //    (참고: 부산항만공사는 2026-01-01부터 실제 "친환경선박(ESI) 인센티브" 제도를 시행 중이며
+  //    ESI 35~49.9점 5%/50점 이상 10% 항만시설사용료 감면이지만, ESI 산출에 필요한 NOx·SOx·
+  //    육상전원공급 데이터가 없어 이 플랫폼에서는 금액으로 재현하지 않는다.)
+  portDue: {
+    minGrossTonnageForFee: 150,
+    foreignGoing: { base10TonPer12hKrw: 187, excess10TonPer1hKrw: 15.7 },
+    coastal: { base10TonPer12hKrw: 61, excess10TonPer1hKrw: 5.2 },
+    fxKrwPerUsd: 1515.64,
+    carbonShadowPriceUsdPerTon: 97,
   },
 };

@@ -34,10 +34,29 @@ export interface ControlRoomPriorityTarget {
   confidence?: string;
 }
 
+// 근접 충돌위험(CPA/TCPA) — backend/services/control-room-service.ts 와 동기화.
+export interface ControlRoomCollisionAlert {
+  aName: string;
+  bName: string;
+  risk: "danger" | "warning";
+  cpaNm: number;
+  tcpaMinutes: number;
+  encounter: string;
+}
+
+export interface ControlRoomCollisionRisk {
+  totalAlerts: number;
+  dangerCount: number;
+  warningCount: number;
+  monitoredVessels: number;
+  topAlerts: ControlRoomCollisionAlert[];
+}
+
 export interface ControlRoomSnapshot {
   generatedAt: string;
   ports: ControlRoomPortSnapshot[];
   ships: ControlRoomShipSummary;
+  collisionRisk: ControlRoomCollisionRisk;
   energy: {
     candidateCount: number;
     recommendedCount: number;

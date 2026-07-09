@@ -10,7 +10,7 @@
 // 참고: 기준선 CII_ref = a × Capacity^(-c),  Required = (1 - Z) × CII_ref
 //       등급 경계 = Required × exp(dN),  Attained/Required 비교로 A~E 부여.
 
-import { classifyVessel, fuelTypeFor, type FuelType, type VesselCategory } from "./fuel";
+import { CO2_FACTOR_TON, classifyVessel, fuelTypeFor, voyageFuelTon, type FuelType, type VesselCategory } from "./fuel";
 
 // CII 표준이 구분하는 선종. fuel.ts의 VesselCategory에서 매핑한다.
 export type CiiCategory = "bulk" | "tanker" | "container" | "general_cargo" | "gas" | "lng" | "cruise";
@@ -34,12 +34,10 @@ function toCiiCategory(cat: VesselCategory): CiiCategory | null {
   }
 }
 
-// ── 탄소계수 CF (t-CO₂ / t-fuel), MEPC 기준 ────────────────────────────
-const CARBON_FACTOR: Record<FuelType, number> = {
-  MGO: 3.206, // Diesel/Gas Oil
-  VLSFO: 3.151, // Light Fuel Oil 근사
-  LNG: 2.75,
-};
+// 탄소계수 CF(t-CO₂/t-fuel)는 fuel.ts의 CO2_FACTOR_TON을 그대로 재사용한다(IMO MEPC.376(80)
+// Appendix 2 실측치, HFO(VLSFO)_f_SR_gm 경로 — fuel-factors.ts 주석대로 실무상 post-2020
+// VLSFO(0.5%S) 벙커유는 이 경로를 쓴다). 예전엔 이 파일에 별도 근사 테이블(VLSFO=3.151, LFO
+// 경로 오적용)을 뒀는데, fuel.ts와 어긋나 있었다 — 중복 테이블을 없애 드리프트를 막는다.
 
 // ── 연간 감축률 Z (2019 기준선 대비) ───────────────────────────────────
 const REDUCTION_BY_YEAR: Record<number, number> = { 2023: 0.05, 2024: 0.07, 2025: 0.09, 2026: 0.11 };
@@ -187,7 +185,7 @@ export function computeCiiStatus(vesselType: string | undefined, grossTonnage: n
   const profile = SEA_PROFILE[category];
   const meTpd = profile.meTonPerDay[sizeTier(dwtEstimate)];
   const fuelType = fuelTypeFor(classifyVessel(vesselType), "sea");
-  const co2PerDayG = meTpd * CARBON_FACTOR[fuelType] * 1_000_000; // g-CO₂/day
+  const co2PerDayG = meTpd * CO2_FACTOR_TON[fuelType] * 1_000_000; // g-CO₂/day
   const nmPerDay = profile.speedKn * 24;
   const attainedCii = co2PerDayG / (nmPerDay * capacity); // g-CO₂ / (capacity·nm)
 
@@ -195,6 +193,112 @@ export function computeCiiStatus(vesselType: string | undefined, grossTonnage: n
   const marginPct = ((requiredCii - attainedCii) / requiredCii) * 100;
 
   return { category, year, dwtEstimate, capacity, fuelType, referenceCii, requiredCii, attainedCii, grade, boundaries, marginPct };
+}
+
+export interface ApproachCiiCurvePoint {
+  speed: number;
+  cii: number;
+  fuelTon: number;
+  co2Ton: number;
+  travelHours: number;
+}
+
+export interface ApproachCiiCurve {
+  basis: "ais-position-to-port-approach";
+  distanceNm: number;
+  capacityTonnage: number;
+  capacitySource: "vessel-spec-dwt" | "gt-estimate";
+  fuelType: FuelType;
+  selectedSpeedKn: number;
+  selectedCii: number;
+  points: ApproachCiiCurvePoint[];
+  note: string;
+}
+
+export interface ComputeApproachCiiCurveInput {
+  vesselType?: string;
+  grossTonnage?: number | null;
+  deadweightTonnage?: number | null;
+  distanceNm?: number | null;
+  currentSpeedKn?: number | null;
+}
+
+function round(value: number, digits = 3): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function resolveApproachCapacity(input: ComputeApproachCiiCurveInput): {
+  capacityTonnage: number;
+  capacitySource: ApproachCiiCurve["capacitySource"];
+} | null {
+  if (input.deadweightTonnage != null && Number.isFinite(input.deadweightTonnage) && input.deadweightTonnage > 0) {
+    return { capacityTonnage: input.deadweightTonnage, capacitySource: "vessel-spec-dwt" };
+  }
+
+  const category = toCiiCategory(classifyVessel(input.vesselType));
+  if (!category || !input.grossTonnage || input.grossTonnage <= 0) return null;
+
+  return {
+    capacityTonnage: capacityValue(category, estimateDwt(category, input.grossTonnage), input.grossTonnage),
+    capacitySource: "gt-estimate",
+  };
+}
+
+function speedSamplesAround(currentSpeedKn: number): number[] {
+  const minSpeed = 4;
+  const maxSpeed = 24;
+  const center = Math.max(minSpeed, Math.min(maxSpeed, currentSpeedKn));
+  const start = Math.max(minSpeed, Math.floor((center - 3) * 2) / 2);
+  const end = Math.min(maxSpeed, Math.ceil((center + 3) * 2) / 2);
+  const points: number[] = [];
+  for (let speed = start; speed <= end + 0.001; speed += 0.5) {
+    points.push(round(speed, 1));
+  }
+  return points;
+}
+
+export function computeApproachCiiCurve(input: ComputeApproachCiiCurveInput): ApproachCiiCurve | null {
+  if (!input.distanceNm || !Number.isFinite(input.distanceNm) || input.distanceNm <= 0) return null;
+  if (!input.currentSpeedKn || !Number.isFinite(input.currentSpeedKn) || input.currentSpeedKn <= 0) return null;
+
+  const capacity = resolveApproachCapacity(input);
+  if (!capacity || capacity.capacityTonnage <= 0) return null;
+
+  const category = classifyVessel(input.vesselType);
+  const fuelType = fuelTypeFor(category, "sea");
+  const speeds = speedSamplesAround(input.currentSpeedKn);
+  const points = speeds.map((speed) => {
+    const fuelTon = voyageFuelTon(input.vesselType, input.grossTonnage ?? undefined, input.distanceNm!, speed);
+    const co2Ton = fuelTon * CO2_FACTOR_TON[fuelType];
+    const cii = (co2Ton * 1_000_000) / (capacity.capacityTonnage * input.distanceNm!);
+
+    return {
+      speed,
+      cii: round(cii),
+      fuelTon: round(fuelTon, 3),
+      co2Ton: round(co2Ton, 3),
+      travelHours: round(input.distanceNm! / speed, 2),
+    };
+  });
+  if (points.length === 0) return null;
+
+  const selected = points.reduce((best, point) =>
+    Math.abs(point.speed - input.currentSpeedKn!) < Math.abs(best.speed - input.currentSpeedKn!) ? point : best
+  );
+
+  return {
+    basis: "ais-position-to-port-approach",
+    distanceNm: round(input.distanceNm, 1),
+    capacityTonnage: round(capacity.capacityTonnage, 0),
+    capacitySource: capacity.capacitySource,
+    fuelType,
+    selectedSpeedKn: selected.speed,
+    selectedCii: selected.cii,
+    points,
+    note:
+      "현재 AIS 위치에서 목적 항만까지의 남은 접근 거리, 선박 제원 DWT 우선값, 속도별 항해 연료 추정, 연료별 CO2 계수를 사용한 접근구간 추정 CII입니다.",
+  };
 }
 
 // 등급별 색상(A 녹색 → E 적색). UI 공용.
