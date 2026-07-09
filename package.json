@@ -12,7 +12,8 @@
     "validate:energy-data": "tsx scripts/validate-energy-data.ts",
     "validate:energy-decisions": "tsx scripts/validate-energy-decisions.ts",
     "validate:route-scenarios": "tsx scripts/validate-route-scenarios.ts",
-    "validate:control-room": "tsx scripts/validate-control-room.ts"
+    "validate:control-room": "tsx scripts/validate-control-room.ts",
+    "validate:congestion-analysis": "tsx scripts/validate-congestion-analysis.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.0",

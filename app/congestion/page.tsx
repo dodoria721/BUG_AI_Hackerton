@@ -5,6 +5,7 @@ import { Area, AreaChart, CartesianGrid, ReferenceDot, ReferenceLine, Responsive
 import type { CongestionForecast, CongestionPoint, RegionCongestionSeries } from "@/frontend/types/domain";
 import { BUSAN_DISPLAY_PORT, congestionDisplayColor, congestionDisplayLabel } from "@/frontend/config/ports";
 import LeftRail from "@/frontend/components/LeftRail";
+import AiCongestionAnalysisCard from "@/frontend/components/congestion/AiCongestionAnalysisCard";
 import { LT } from "@/frontend/components/theme";
 
 const muted = LT.muted;
@@ -288,6 +289,8 @@ export default function CongestionPage() {
           <Stat label={`입항 신고 (${windowH}h)`} value={totals.arrivals} unit="건" />
           <Stat label={`출항 신고 (${windowH}h)`} value={totals.departures} unit="건" />
         </div>
+
+        <AiCongestionAnalysisCard />
 
         {/* 지역 선택 탭 */}
         <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
