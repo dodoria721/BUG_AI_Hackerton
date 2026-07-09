@@ -12,12 +12,12 @@ import {
   beaufortFromWindMs,
   CII_GRADE_BANDS,
   CII_GRADE_COLOR,
-  DEMO_TYPHOON,
   STATUS_LABEL,
   windDir8,
 } from "@/frontend/config/vessel-display";
 import { BUSAN_DISPLAY_PORT, congestionDisplayColor, congestionDisplayLabel } from "@/frontend/config/ports";
 import type { WeatherForecast } from "@/frontend/types/domain";
+import type { TyphoonInfo, TyphoonTrackPoint } from "@/frontend/types/marine";
 import type { VesselMonitorData } from "@/frontend/types/vessel";
 
 const CiiSpeedChart = dynamic(() => import("@/frontend/components/vessel/CiiSpeedChart"), { ssr: false });
@@ -43,11 +43,6 @@ function Pill({ text, tone = "blue" }: { text: string; tone?: "blue" | "amber" |
   return (
     <span style={{ fontSize: 9.5, fontWeight: 800, color: map.color, background: map.bg, padding: "3px 8px", borderRadius: 20, letterSpacing: ".02em" }}>{text}</span>
   );
-}
-
-// "소스 없음" 표기 배지
-function MockBadge({ label = "예시 · 미연동" }: { label?: string }) {
-  return <Pill text={label} tone="amber" />;
 }
 
 function Panel({ title, badge, children, style }: { title: string; badge?: ReactNode; children: ReactNode; style?: CSSProperties }) {
@@ -122,29 +117,61 @@ function kst(iso: string | null): string {
   if (isNaN(d.getTime())) return DASH;
   return d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 }
+function latLonText(lat: number, lon: number): string {
+  const latText = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? "N" : "S"}`;
+  const lonText = `${Math.abs(lon).toFixed(1)}°${lon >= 0 ? "E" : "W"}`;
+  return `${latText}, ${lonText}`;
+}
+function latestTyphoonPoint(typhoon: TyphoonInfo): TyphoonTrackPoint | null {
+  if (typhoon.track.length === 0) return null;
+  return typhoon.track.reduce((latest, point) => (point.time > latest.time ? point : latest));
+}
 function statusColor(status: string): string {
   if (status === "underway") return LT.green;
   if (status === "moored") return LT.blue;
   return LT.amber;
 }
 
+interface TyphoonApiResponse {
+  typhoons?: TyphoonInfo[];
+  error?: string;
+}
+
+async function fetchTyphoonInfo(): Promise<TyphoonApiResponse> {
+  try {
+    const response = await fetch("/api/marine/typhoon", { cache: "no-store" });
+    const data = (await response.json().catch(() => null)) as TyphoonApiResponse | null;
+    if (!response.ok) return { error: data?.error ?? "태풍정보 API 조회에 실패했습니다." };
+    return { typhoons: Array.isArray(data?.typhoons) ? data.typhoons : [] };
+  } catch {
+    return { error: "태풍정보 API에 연결할 수 없습니다." };
+  }
+}
+
 export default function VesselPage() {
   const [plannedSpeed, setPlannedSpeed] = useState(11);
   const [vesselData, setVesselData] = useState<VesselMonitorData | null>(null);
   const [weather, setWeather] = useState<WeatherForecast | null>(null);
+  const [typhoons, setTyphoons] = useState<TyphoonInfo[] | null>(null);
+  const [typhoonError, setTyphoonError] = useState<string | null>(null);
+  const [typhoonLoading, setTyphoonLoading] = useState(true);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [now, setNow] = useState<Date>(() => new Date());
 
   useEffect(() => {
     let active = true;
     async function load() {
-      const [vessel, wx] = await Promise.all([
+      const [vessel, wx, typhoon] = await Promise.all([
         fetch("/api/vessel").then((r) => r.json()).catch(() => null),
         fetch("/api/weather").then((r) => r.json()).catch(() => null),
+        fetchTyphoonInfo(),
       ]);
       if (!active) return;
       setVesselData(vessel && Array.isArray(vessel.items) ? vessel : null);
       setWeather(wx && wx.points ? wx : null);
+      setTyphoons(typhoon.typhoons ?? null);
+      setTyphoonError(typhoon.error ?? null);
+      setTyphoonLoading(false);
       setNow(new Date());
     }
     load();
@@ -407,19 +434,56 @@ export default function VesselPage() {
             )}
           </Panel>
 
-          {/* 태풍 모니터링 (미연동 — 예시) */}
-          <Panel title="태풍 모니터링" badge={<MockBadge />}>
+          {/* 태풍 모니터링 (기상청 태풍정보 API) */}
+          <Panel
+            title="태풍 모니터링"
+            badge={typhoonLoading ? <Pill text="조회 중" tone="blue" /> : typhoonError ? <Pill text="연동 확인" tone="amber" /> : <Pill text="기상청 API" tone="green" />}
+          >
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {DEMO_TYPHOON.map((p, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: i > 0 ? `1px solid ${LT.borderColor}` : "none" }}>
-                  <div style={{ width: 34, height: 34, flex: "none", borderRadius: "50%", background: LT.blueSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🌀</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: ink }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: LT.red, fontWeight: 700, marginTop: 2 }}>📍 {p.latText}, {p.lonText}</div>
-                  </div>
-                  <div style={{ fontSize: 11, color: muted, fontWeight: 600, whiteSpace: "nowrap" }}>{p.timeUtc}</div>
+              {typhoonLoading ? (
+                <div style={{ fontSize: 12, color: muted, padding: "18px 4px", lineHeight: 1.6 }}>기상청 태풍정보를 불러오는 중입니다.</div>
+              ) : typhoonError ? (
+                <div style={{ fontSize: 12, color: muted, padding: "18px 4px", lineHeight: 1.6 }}>
+                  <b style={{ color: LT.amber }}>태풍정보 API를 연결하지 못했습니다.</b>
+                  <br />
+                  {typhoonError}
+                  <br />
+                  .env.local의 KMA_TYPHOON_KEY 설정을 확인하면 실제 태풍정보로 표시됩니다.
                 </div>
-              ))}
+              ) : !typhoons || typhoons.length === 0 ? (
+                <div style={{ fontSize: 12, color: muted, padding: "18px 4px", lineHeight: 1.6 }}>
+                  <b style={{ color: LT.green }}>최근 3일 발표 기준 활성 태풍 정보가 없습니다.</b>
+                  <br />
+                  기상청 태풍정보 조회서비스 응답을 기준으로 표시합니다.
+                </div>
+              ) : (
+                typhoons.map((typhoon, i) => {
+                  const point = latestTyphoonPoint(typhoon);
+                  return (
+                    <div key={typhoon.typhoonId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: i > 0 ? `1px solid ${LT.borderColor}` : "none" }}>
+                      <div style={{ width: 34, height: 34, flex: "none", borderRadius: "50%", background: LT.blueSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🌀</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: ink }}>
+                          {typhoon.nameKr ? `${typhoon.nameKr} (${typhoon.name})` : typhoon.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: LT.red, fontWeight: 700, marginTop: 2 }}>
+                          {point ? latLonText(point.lat, point.lon) : "좌표 없음"} · {typhoon.status}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: muted, fontWeight: 700, marginTop: 2 }}>
+                          {point?.maxWindSpeedMs != null ? `최대풍속 ${point.maxWindSpeedMs}m/s` : "최대풍속 -"}
+                          {" · "}
+                          {point?.centralPressureHpa != null ? `중심기압 ${point.centralPressureHpa}hPa` : "중심기압 -"}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: muted, fontWeight: 600, whiteSpace: "nowrap", textAlign: "right" }}>
+                        {point ? kst(point.time) : DASH}
+                        <br />
+                        <span style={{ fontSize: 10, color: point?.forecast ? LT.amber : LT.green }}>{point?.forecast ? "예보" : "실황"}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </Panel>
 
