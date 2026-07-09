@@ -10,7 +10,7 @@
 // 참고: 기준선 CII_ref = a × Capacity^(-c),  Required = (1 - Z) × CII_ref
 //       등급 경계 = Required × exp(dN),  Attained/Required 비교로 A~E 부여.
 
-import { classifyVessel, fuelTypeFor, type FuelType, type VesselCategory } from "./fuel";
+import { classifyVessel, fuelTypeFor, CO2_FACTOR_TON, type FuelType, type VesselCategory } from "./fuel";
 
 // CII 표준이 구분하는 선종. fuel.ts의 VesselCategory에서 매핑한다.
 export type CiiCategory = "bulk" | "tanker" | "container" | "general_cargo" | "gas" | "lng" | "cruise";
@@ -34,12 +34,10 @@ function toCiiCategory(cat: VesselCategory): CiiCategory | null {
   }
 }
 
-// ── 탄소계수 CF (t-CO₂ / t-fuel), MEPC 기준 ────────────────────────────
-const CARBON_FACTOR: Record<FuelType, number> = {
-  MGO: 3.206, // Diesel/Gas Oil
-  VLSFO: 3.151, // Light Fuel Oil 근사
-  LNG: 2.75,
-};
+// 탄소계수 CF(t-CO₂/t-fuel)는 fuel.ts의 CO2_FACTOR_TON을 그대로 재사용한다(IMO MEPC.376(80)
+// Appendix 2 실측치, HFO(VLSFO)_f_SR_gm 경로 — fuel-factors.ts 주석대로 실무상 post-2020
+// VLSFO(0.5%S) 벙커유는 이 경로를 쓴다). 예전엔 이 파일에 별도 근사 테이블(VLSFO=3.151, LFO
+// 경로 오적용)을 뒀는데, fuel.ts와 어긋나 있었다 — 중복 테이블을 없애 드리프트를 막는다.
 
 // ── 연간 감축률 Z (2019 기준선 대비) ───────────────────────────────────
 const REDUCTION_BY_YEAR: Record<number, number> = { 2023: 0.05, 2024: 0.07, 2025: 0.09, 2026: 0.11 };
@@ -187,7 +185,7 @@ export function computeCiiStatus(vesselType: string | undefined, grossTonnage: n
   const profile = SEA_PROFILE[category];
   const meTpd = profile.meTonPerDay[sizeTier(dwtEstimate)];
   const fuelType = fuelTypeFor(classifyVessel(vesselType), "sea");
-  const co2PerDayG = meTpd * CARBON_FACTOR[fuelType] * 1_000_000; // g-CO₂/day
+  const co2PerDayG = meTpd * CO2_FACTOR_TON[fuelType] * 1_000_000; // g-CO₂/day
   const nmPerDay = profile.speedKn * 24;
   const attainedCii = co2PerDayG / (nmPerDay * capacity); // g-CO₂ / (capacity·nm)
 

@@ -23,6 +23,7 @@ export interface Ship {
   // 또는 선박명으로 매칭해 채운다 — 전부 optional: 매칭 안 되면 그냥 비워둔다.
   callSign?: string; // 호출부호 — AIS ShipStaticData와 Port-MIS clsgn을 잇는 매칭 키
   imo?: string; // IMO 선박식별번호 (AIS ShipStaticData에서 수집)
+  aisShipType?: number; // AIS 선종코드(ITU-R M.1371, 0~99) — 대형 상선/소형선 분류용. backend/ais/ship-type.ts
   previousPort?: string; // 직전 출항항
   nextPort?: string; // 다음 기항지
   berthName?: string; // Port-MIS 신고상의 실제 접안/정박 시설명
@@ -62,6 +63,42 @@ export interface BerthArea {
 export interface CongestionThresholds {
   low: number; // level <= low: 원활
   medium: number; // low < level <= medium: 보통, 초과 시 혼잡
+}
+
+// VTS 근접 충돌위험(CPA/TCPA) 경보 경계값 — 관제사 주의 분배용.
+// CPA(최근접 거리)가 작고 TCPA(최근접까지 시간)가 짧을수록 위험. 항만·해역 특성에 따라
+// 협수로가 좁으면 경계 거리를 줄여야 하므로 항만 고유값으로 seed-port.ts 에 둔다.
+export interface CollisionRiskThresholds {
+  cpaWarnNm: number; // 최근접 거리 이 값 이하 → 경보(warning)
+  cpaDangerNm: number; // 최근접 거리 이 값 이하 → 위험(danger)
+  tcpaHorizonMin: number; // 최근접이 이 시간(분) 이내로 임박할 때만 경보(먼 미래는 무시)
+  ignoreSpeedKn: number; // 두 선박 모두 이 속력 미만이면 정지(접안·묘박)로 보고 판정 제외
+  // 상대속도(접근 속도)가 이 값 미만이면 제외. 붐비는 정박지에서 서로 가까이 떠 있을 뿐인
+  // 저속 선박 쌍(대응 시간이 충분)을 걸러, "실제로 좁혀지는" 조우만 남긴다.
+  minClosingSpeedKn: number;
+  // VTS 관제 대상 최소 총톤수(GT). 이 값 미만의 소형선(어선·예인·부선 등)은 충돌 경보에서 뺀다.
+  // 실제 관제도 소형선엔 개별 CPA 경보를 내지 않는다. 총톤수가 파악된 선박에만 적용(아래 참고).
+  minMonitoredGrossTonnage: number;
+}
+
+// 정박료(항만시설사용료) 요율 — 해양수산부 고시 "무역항의 항만시설 사용 및 사용료에 관한
+// 규정"(고시 제2018-174호, 항만법 시행령 제46조 제2항)의 실제 요율 구조를 그대로 쓴다.
+// "10톤당·12시간당" 기본료 + 12시간 초과분에 대한 "10톤당·1시간당" 초과사용료로 구성된다.
+export interface MooringFeeRate {
+  base10TonPer12hKrw: number; // 기본료(10톤·12시간당, KRW)
+  excess10TonPer1hKrw: number; // 초과사용료(10톤·1시간당, KRW)
+}
+
+// 정박료 + 탄소 그림자가격(참고용) 정책. 요율·환율·탄소 시장가는 실측/시세라 seed-port.ts 에 둔다.
+//   - foreignGoing/coastal: 해수부 고시 실제 요율(외항선/내항선 구분). 신뢰도 높음.
+//   - carbonShadowPriceUsdPerTon: 부산항이 실제 부과하는 금액이 아니라, 국제 탄소시장(EU ETS)
+//     가격을 적용했을 때의 참고 시나리오 지표(shadow price)다.
+export interface PortDuePolicy {
+  minGrossTonnageForFee: number; // 이 총톤수 미만은 정박료 부과 대상 아님(해수부 고시 기준)
+  foreignGoing: MooringFeeRate;
+  coastal: MooringFeeRate;
+  fxKrwPerUsd: number; // 참고 환산용 원/달러 환율(고정 스냅샷, 안내용)
+  carbonShadowPriceUsdPerTon: number; // EU ETS 시장가 기준 참고 탄소가격(USD/tCO2)
 }
 
 // 동시 재항 척수 용량 — 2019~2024 부산항만공사 입출항 집계 27만건에서 오프라인 산출한
@@ -173,6 +210,7 @@ export interface PortConfig {
   zones: Zone[];
   berthAreas: BerthArea[]; // 부두별 위치(선석명 분류용)
   congestionThresholds: CongestionThresholds;
+  collisionRisk: CollisionRiskThresholds; // VTS 근접 충돌위험(CPA/TCPA) 경보 경계값
   shipsPerHourCapacity: number; // (AIS 혼잡도) 시간당 처리 가능 선박 수 — 정규화 기준
   arrivalCapacityPerHour: number; // (Port-MIS 혼잡도) 시간당 입항 신고 처리량 — 정규화 기준
   // (해수부 연안AIS 통계 혼잡도) 부산 bbox(mockAreaRadiusKm) 안 시간당 AIS 척수를 level=1로 볼 포화 기준.
@@ -182,6 +220,7 @@ export interface PortConfig {
   simulationDestinations: SimulationDestinationPort[]; // /simulation 가상 선박 도착지 선택지
   approachRoutes: ApproachRoute[]; // /simulation 사전 정의 접근 경로 후보
   portCallCapacity: PortCallCapacity; // 동시 재항 용량·대기 보정(입출항 집계 실측)
+  portDue: PortDuePolicy; // 정박료(해수부 고시 실제 요율) + 탄소 그림자가격(참고)
 }
 
 export interface CongestionPoint {

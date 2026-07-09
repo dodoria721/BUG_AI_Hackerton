@@ -19,6 +19,7 @@ interface ShipRow {
   destination_berth_id: string | null;
   call_sign: string | null;
   imo: string | null; // AIS ShipStaticData 식별번호 — 위치 flush가 아니라 정적 flush(staticInfoToRow)로만 채운다
+  ais_ship_type: number | null; // AIS 선종코드(0~99) — imo와 마찬가지로 정적 flush로만 채운다
   // ── Port-MIS 보강 필드 — shipToRow는 이 컬럼들을 절대 쓰지 않는다(아래 주석 참고) ──
   previous_port: string | null;
   next_port: string | null;
@@ -41,6 +42,7 @@ function rowToShip(r: ShipRow): Ship {
     ...(r.destination_berth_id ? { destinationBerthId: r.destination_berth_id } : {}),
     ...(r.call_sign ? { callSign: r.call_sign } : {}),
     ...(r.imo ? { imo: r.imo } : {}),
+    ...(r.ais_ship_type != null ? { aisShipType: r.ais_ship_type } : {}),
     ...(r.previous_port ? { previousPort: r.previous_port } : {}),
     ...(r.next_port ? { nextPort: r.next_port } : {}),
     ...(r.berth_name ? { berthName: r.berth_name } : {}),
@@ -62,6 +64,7 @@ export function shipToRow(
     ...shipToPositionRow(s),
     call_sign: s.callSign ?? null,
     imo: s.imo ?? null,
+    ais_ship_type: s.aisShipType ?? null,
   };
 }
 
@@ -87,13 +90,14 @@ export function shipToPositionRow(
 
 // ShipStaticData → 식별 필드 update용 부분 row. 값이 있는 필드만 담아(빈 값 제외) 기존 데이터를
 // 절대 null로 덮어쓰지 않는다. 각 mmsi에 대해 update(...).eq("mmsi", …)로 개별 반영한다.
-export function staticInfoToRow(info: StaticInfo): Partial<Pick<ShipRow, "name" | "call_sign" | "imo">> {
-  const row: Partial<Pick<ShipRow, "name" | "call_sign" | "imo">> = {};
+export function staticInfoToRow(info: StaticInfo): Partial<Pick<ShipRow, "name" | "call_sign" | "imo" | "ais_ship_type">> {
+  const row: Partial<Pick<ShipRow, "name" | "call_sign" | "imo" | "ais_ship_type">> = {};
   const name = info.name?.trim();
   const callSign = info.callSign?.trim();
   if (name) row.name = name;
   if (callSign) row.call_sign = callSign;
   if (info.imo) row.imo = info.imo;
+  if (info.shipType != null) row.ais_ship_type = info.shipType;
   return row;
 }
 

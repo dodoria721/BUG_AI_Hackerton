@@ -13,6 +13,7 @@ create table if not exists public.ships (
   destination_berth_id  text,
   call_sign             text,                                -- AIS 호출부호 (Port-MIS 매칭 키)
   imo                   text,                                -- AIS ShipStaticData IMO 선박식별번호
+  ais_ship_type         int,                                 -- AIS 선종코드(0~99) — 대형 상선/소형선 분류용
   -- ↓ Port-MIS(해양수산부_선박운항정보) 입출항 신고 매칭 보강 필드. AIS 10초 폴링 upsert는
   --   이 컬럼들을 절대 건드리지 않는다(backend/ais/ship-source.ts의 shipToRow 참고) —
   --   backend/portmis/run-enrich.ts만 별도 update로 채운다.
@@ -29,6 +30,7 @@ create table if not exists public.ships (
 -- 컬럼 추가. 새로 만드는 경우에도 그대로 실행해도 안전하다(멱등).
 alter table public.ships add column if not exists call_sign text;
 alter table public.ships add column if not exists imo text;
+alter table public.ships add column if not exists ais_ship_type int;
 alter table public.ships add column if not exists previous_port text;
 alter table public.ships add column if not exists next_port text;
 alter table public.ships add column if not exists berth_name text;
