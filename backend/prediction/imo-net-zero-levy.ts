@@ -67,6 +67,17 @@ export function computeFuelWtW(fuelType: ImoNzfFuelType): number {
   return f.wttGCo2eqPerMj + computeTtW(f);
 }
 
+/**
+ * 연료 소비량(t)으로부터 총 WtW CO2eq 배출량(t)을 계산한다. 다른 모델(예: 접안 중 배출량
+ * 추정)이 "달성 GFI"가 아니라 "총 배출량"만 필요할 때 이 함수를 재사용한다.
+ */
+export function computeCo2eqTon(fuelType: ImoNzfFuelType, fuelConsumptionTon: number): number {
+  const f = IMO_FUEL_FACTORS[fuelType];
+  const wtwGPerMj = computeFuelWtW(fuelType);
+  const energyMj = Math.max(0, fuelConsumptionTon) * 1_000_000 * f.lcvMjPerG; // t → g(×1e6) × MJ/g
+  return (wtwGPerMj * energyMj) / 1_000_000; // g → t
+}
+
 // GFI 2008 기준선. 연도별 목표 = 기준선 × (1 − 감축율).
 const GFI_REFERENCE_G_PER_MJ = 93.3;
 
