@@ -49,21 +49,21 @@ function shipIcon(ship: Ship, selected: boolean): L.DivIcon {
   });
 }
 
-// 지역별(북항/감천/신항) AIS 통계 혼잡도 버블(divIcon). 혼잡도가 높을수록 크고 붉게,
-// 버블 숫자는 해수부 연안AIS 통계의 해역 척수(currentVessels), 아래 라벨은 혼잡도 %.
-function regionCongestionIcon(name: string, level: number, vessels: number): L.DivIcon {
-  const size = Math.min(60, 34 + level * 30);
+// 지역별(북항/감천/신항) AIS 통계 혼잡도 버블(divIcon).
+// 흰 알약형 카드 + 혼잡도 색 테두리 · 큰 혼잡도 %(색) 위, 지역명(색) 아래.
+function regionCongestionIcon(name: string, level: number): L.DivIcon {
   const color = congestionDisplayColor(level);
   const pct = Math.round(level * 100);
   const html = `
-    <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-2px)">
-      <div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};color:#0b1220;
-        display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${Math.max(12, size / 3.4)}px;
-        border:2px solid #fff;box-shadow:0 4px 12px rgba(20,40,90,.35)">${vessels}</div>
-      <div style="margin-top:2px;font-size:10.5px;font-weight:700;color:#0a1830;background:rgba(255,255,255,.85);
-        padding:1px 6px;border-radius:6px;white-space:nowrap">${name} ${pct}%</div>
+    <div style="width:140px;height:56px;display:flex;align-items:center;justify-content:center">
+      <div style="display:inline-flex;flex-direction:column;align-items:center;background:#fff;
+        border:2px solid ${color};border-radius:16px;padding:6px 16px;
+        box-shadow:0 8px 20px rgba(20,40,90,.20);white-space:nowrap">
+        <span style="font-size:19px;font-weight:800;color:${color};line-height:1.05">${pct}%</span>
+        <span style="font-size:11px;font-weight:700;color:${color};margin-top:1px">${name}</span>
+      </div>
     </div>`;
-  return L.divIcon({ html, className: "region-congestion-marker", iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
+  return L.divIcon({ html, className: "region-congestion-marker", iconSize: [140, 56], iconAnchor: [70, 28] });
 }
 
 interface ShipMapProps {
@@ -95,7 +95,7 @@ export default function ShipMap({ ships, selectedMmsi, onSelect, regions = [], b
         const center = REGION_CENTER.get(r.id);
         if (!center) return null;
         return (
-          <Marker key={r.id} position={[center.lat, center.lng]} icon={regionCongestionIcon(r.name, r.currentLevel, r.currentVessels)}>
+          <Marker key={r.id} position={[center.lat, center.lng]} icon={regionCongestionIcon(r.name, r.currentLevel)}>
             <Popup>
               <div className="text-sm">
                 <p className="font-medium">{r.name}</p>
